@@ -1,0 +1,6 @@
+student_id: "2024"
+student_name: "张三"
+student_class: "计算机24"
+naming_format: "{student_id}-{student_name}-{student_class}"
+template_path: "算法设计与分析实验报告模板-最新(1).doc"
+output_base_dir: "."

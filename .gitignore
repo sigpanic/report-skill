@@ -1,0 +1,40 @@
+# 文档文件
+*.doc
+*.docx
+
+# 测试/实验文件夹
+sy*/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 敏感配置
+.env
+
+# 编译产物
+*.exe
+*.pyc
+
+# OCR 训练数据（大文件）
+*.traineddata
+
+# IDE 配置
+.vscode/
+.idea/
+*.swp
+*.swo
+.trae/
+
+# OS 文件
+.DS_Store
+Thumbs.db
+
+dev_test/
