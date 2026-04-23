@@ -59,12 +59,14 @@ def generate_report(
             except Exception:
                 pass
             return doc_to_save
-        shutil.copy2(docx_output, output_path)
+        docx_output_path = str(out_path.with_suffix('.docx'))
+        shutil.copy2(docx_output, docx_output_path)
         try:
             os.remove(docx_output)
         except Exception:
             pass
-        return output_path
+        print(f"⚠ docx转doc失败，已保存为docx格式: {docx_output_path}")
+        return docx_output_path
 
     doc.save(output_path)
     return output_path
@@ -75,15 +77,24 @@ def _docx_to_doc(docx_path: str, doc_output_path: str) -> Optional[str]:
         import win32com.client
         word = win32com.client.Dispatch("Word.Application")
         word.Visible = False
+        word.DisplayAlerts = False
+        result = None
         try:
             doc = word.Documents.Open(os.path.abspath(docx_path))
             try:
                 doc.SaveAs2(os.path.abspath(doc_output_path), FileFormat=0)
+                result = doc_output_path
             finally:
-                doc.Close()
+                try:
+                    doc.Close(False)
+                except Exception:
+                    pass
         finally:
-            word.Quit()
-        return doc_output_path
+            try:
+                word.Quit()
+            except Exception:
+                pass
+        return result
     except Exception as e:
         print(f"docx转doc失败: {e}")
         return None

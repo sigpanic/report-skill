@@ -11,13 +11,15 @@ from mcp.types import Tool, TextContent
 
 from src.protocol.schema import (
     ANALYZE_TEMPLATE_SCHEMA, GENERATE_REPORT_SCHEMA, GENERATE_SKILL_SCHEMA,
-    PARSE_COURSE_SCHEMA, VERIFY_FORMAT_SCHEMA
+    PARSE_COURSE_SCHEMA, VERIFY_FORMAT_SCHEMA, SAVE_PROFILE_SCHEMA
 )
-from src.template_parser.analyzer import analyze_template, save_profile
+from src.template_parser.analyzer import analyze_template_compact, save_profile, save_compact, get_analysis_guide
 from src.template_parser.course_parser import parse_course_material
 from src.doc_generator.generator import generate_report
 from src.doc_generator.verifier import verify_format
 from src.skill_generator.generator import generate_skill
+from src.protocol.profile_schema import validate_profile_pydantic, fix_profile_pydantic
+from src.protocol.ts_generator import generate_all_ts_interfaces
 
 server = Server("report-skill-generator")
 
@@ -26,7 +28,7 @@ server = Server("report-skill-generator")
 async def list_tools() -> list[Tool]:
     tools = []
     for schema in [ANALYZE_TEMPLATE_SCHEMA, GENERATE_REPORT_SCHEMA, GENERATE_SKILL_SCHEMA,
-                   PARSE_COURSE_SCHEMA, VERIFY_FORMAT_SCHEMA]:
+                   PARSE_COURSE_SCHEMA, VERIFY_FORMAT_SCHEMA, SAVE_PROFILE_SCHEMA]:
         tool = Tool(
             name=schema["name"],
             description=schema["description"],
@@ -40,15 +42,28 @@ async def list_tools() -> list[Tool]:
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     if name == "analyze_template":
         try:
-            profile = analyze_template(arguments["template_path"])
+            compact = analyze_template_compact(arguments["template_path"])
 
             output_path = arguments.get("output_path")
             if output_path:
-                save_profile(profile, output_path)
-                return [TextContent(type="text", text=f"模板分析完成，Profile已保存至: {output_path}\n\n字段列表: {json.dumps([f['key'] for f in profile.get('fields', [])], ensure_ascii=False)}\n章节列表: {json.dumps([s['title'] for s in profile.get('sections', [])], ensure_ascii=False)}")]
+                save_compact(compact, output_path)
 
-            profile_json = json.dumps(profile, ensure_ascii=False, indent=2)
-            return [TextContent(type="text", text=f"模板分析完成:\n{profile_json[:3000]}")]
+            compact_json = json.dumps(compact, ensure_ascii=False, indent=2)
+            guide = get_analysis_guide()
+
+            result_text = f"""模板紧凑数据已提取（格式目录+引用模式，大幅减少冗余）。
+
+```json
+{compact_json}
+```
+
+---
+
+{guide}
+
+请根据以上数据，分析模板结构并生成TemplateProfile JSON，然后保存为文件供后续工具使用。"""
+
+            return [TextContent(type="text", text=result_text)]
         except Exception as e:
             return [TextContent(type="text", text=f"分析失败: {str(e)}")]
 
@@ -57,6 +72,15 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             profile_path = arguments["profile_path"]
             with open(profile_path, 'r', encoding='utf-8') as f:
                 profile = json.load(f)
+
+            validation = validate_profile_pydantic(profile)
+            if not validation["valid"]:
+                errors_str = "\n".join(f"  - {e}" for e in validation["errors"])
+                return [TextContent(type="text", text=f"Profile格式验证失败，请修正以下错误后再试：\n{errors_str}")]
+
+            profile = fix_profile_pydantic(profile)
+            with open(profile_path, 'w', encoding='utf-8') as f:
+                json.dump(profile, f, ensure_ascii=False, indent=2)
 
             output = generate_report(
                 template_path=arguments["template_path"],
@@ -127,6 +151,29 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 return [TextContent(type="text", text=f"格式验证未通过，以下格式不一致:\n{issues}")]
         except Exception as e:
             return [TextContent(type="text", text=f"验证失败: {str(e)}")]
+
+    elif name == "save_profile":
+        try:
+            profile_data = arguments["profile_json"]
+            output_path = arguments["output_path"]
+
+            validation = validate_profile_pydantic(profile_data)
+            if not validation["valid"]:
+                errors_str = "\n".join(f"  - {e}" for e in validation["errors"])
+                ts_ref = generate_all_ts_interfaces()
+                return [TextContent(type="text", text=f"Profile格式验证失败，请修正以下错误：\n{errors_str}\n\n参考TypeScript接口定义：\n```typescript\n{ts_ref}\n```")]
+
+            profile = fix_profile_pydantic(profile_data)
+
+            os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(profile, f, ensure_ascii=False, indent=2)
+
+            field_keys = [f.get("key", "") for f in profile.get("fields", [])]
+            section_titles = [s.get("title", "") for s in profile.get("sections", [])]
+            return [TextContent(type="text", text=f"Profile已保存至: {output_path}\n字段: {json.dumps(field_keys, ensure_ascii=False)}\n章节: {json.dumps(section_titles, ensure_ascii=False)}")]
+        except Exception as e:
+            return [TextContent(type="text", text=f"保存失败: {str(e)}")]
 
     else:
         return [TextContent(type="text", text=f"未知工具: {name}")]

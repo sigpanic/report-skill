@@ -3,31 +3,15 @@ import json
 from typing import Optional
 
 
-def generate_skill(
-    profile: dict,
-    skill_name: str,
-    output_path: str,
-    constraints: Optional[dict] = None
-) -> str:
-    template_name = _infer_template_name(profile)
-    template_rules = _generate_template_rules(profile)
-    fields_desc = _generate_fields_description(profile)
-    sections_desc = _generate_sections_description(profile)
-    format_desc = _generate_format_description(profile)
-    constraints_desc = _generate_constraints_description(constraints)
-    workflow_desc = _generate_workflow(profile, skill_name)
-
-    template_path_display = os.path.basename(profile.get('template_path', ''))
-
-    skill_content = f"""# {skill_name}
+SKILL_TEMPLATE = """# {skill_name}
 
 ## 概述
 本Skill用于自动生成「{template_name}」Word文档，严格遵循模板格式。
 
 ## 模板信息
-- 模板文件: `{template_path_display}`
-- 纸张大小: {_page_size_desc(profile)}
-- 页边距: {_margin_desc(profile)}
+- 模板文件: `{template_filename}`
+- 纸张大小: {page_size}
+- 页边距: {margins}
 
 ## 模板规则
 
@@ -35,35 +19,35 @@ def generate_skill(
 
 ## 字段定义
 
-{fields_desc}
+{fields_section}
 
 ## 章节结构
 
-{sections_desc}
+{sections_section}
 
 ## 格式规则
 
-{format_desc}
+{format_section}
 
 ## 约束规则
 
-{constraints_desc}
+{constraints_section}
 
 ## 工作流程
 
-{workflow_desc}
+{workflow_section}
 
 ## MCP工具调用
 
 ### analyze_template（首次使用时调用）
-分析Word模板，生成TemplateProfile。
+分析Word模板，返回原始结构数据供LLM分析。
 - template_path (必需): 模板文件路径
-- output_path (可选): Profile保存路径
+- output_path (可选): 原始数据保存路径
 
 ### generate_report（每次生成报告时调用）
 生成报告Word文档。
 - template_path (必需): 模板文件路径
-- output_path (必需): 输出文件路径
+- output_path (必需): 输出文件路径（后缀与模板一致）
 - profile_path (必需): TemplateProfile JSON文件路径
 - field_values (必需): 字段值字典，包含上述所有字段
 - sections (必需): 章节内容数组，每项含title和content
@@ -80,8 +64,41 @@ def generate_skill(
 - 章节内容按模板格式规则排版
 - 图片居中插入，宽度12cm
 - 如果有任何不确定的信息，直接询问用户，不要自己编造
-- 模板中的注释和说明（如"写实验报告时删除此注释"）必须遵守
+- 模板中的注释和说明必须遵守
+- 输出文件后缀必须与模板一致（.doc→.doc, .docx→.docx）
 """
+
+
+def generate_skill(
+    profile: dict,
+    skill_name: str,
+    output_path: str,
+    constraints: Optional[dict] = None
+) -> str:
+    template_name = _infer_template_name(profile)
+    template_filename = os.path.basename(profile.get('template_path', ''))
+    page_size = _page_size_desc(profile)
+    margins = _margin_desc(profile)
+    template_rules = _generate_template_rules(profile)
+    fields_section = _generate_fields_description(profile)
+    sections_section = _generate_sections_description(profile)
+    format_section = _generate_format_description(profile)
+    constraints_section = _generate_constraints_description(constraints)
+    workflow_section = _generate_workflow(profile, skill_name)
+
+    skill_content = SKILL_TEMPLATE.format(
+        skill_name=skill_name,
+        template_name=template_name,
+        template_filename=template_filename,
+        page_size=page_size,
+        margins=margins,
+        template_rules=template_rules,
+        fields_section=fields_section,
+        sections_section=sections_section,
+        format_section=format_section,
+        constraints_section=constraints_section,
+        workflow_section=workflow_section,
+    )
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     with open(output_path, 'w', encoding='utf-8') as f:
@@ -276,7 +293,7 @@ def _generate_workflow(profile: dict, skill_name: str) -> str:
 ### 步骤4：调用MCP工具生成文档
 - 调用 generate_report 工具，传入：
   - template_path: 模板文件路径
-  - output_path: 输出路径
+  - output_path: 输出路径（后缀与模板一致）
   - profile_path: TemplateProfile JSON路径
   - field_values: 字段值字典
   - sections: 章节内容数组

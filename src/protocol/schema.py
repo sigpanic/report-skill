@@ -171,4 +171,23 @@ VERIFY_FORMAT_SCHEMA = {
     }
 }
 
-ALL_TOOLS = [ANALYZE_TEMPLATE_SCHEMA, GENERATE_REPORT_SCHEMA, GENERATE_SKILL_SCHEMA, PARSE_COURSE_SCHEMA, VERIFY_FORMAT_SCHEMA]
+SAVE_PROFILE_SCHEMA = {
+    "name": "save_profile",
+    "description": "保存TemplateProfile JSON到文件，并自动验证格式。LLM分析模板后，调用此工具保存Profile，系统会自动验证格式并补全缺失字段。如果验证失败，会返回具体错误信息供修正。",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "profile_json": {
+                "type": "object",
+                "description": "TemplateProfile JSON对象。必须严格遵循analyze_template返回的TypeScript接口定义。关键字段：template_path(string), page_setup(PageSetup), cover_page(CoverPage), format_rules(FormatRules)为必需；tables, sections, annotation_patterns, removal_patterns, fields为可选。fields数组留空[]即可，系统自动从cover_page和tables汇总。"
+            },
+            "output_path": {
+                "type": "string",
+                "description": "Profile JSON保存路径"
+            }
+        },
+        "required": ["profile_json", "output_path"]
+    }
+}
+
+ALL_TOOLS = [ANALYZE_TEMPLATE_SCHEMA, GENERATE_REPORT_SCHEMA, GENERATE_SKILL_SCHEMA, PARSE_COURSE_SCHEMA, VERIFY_FORMAT_SCHEMA, SAVE_PROFILE_SCHEMA]
