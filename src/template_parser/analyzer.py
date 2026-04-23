@@ -1,10 +1,7 @@
 import os
 import json
-import re
-import tempfile
-from typing import Optional
 
-from src.template_parser.parser import doc_to_docx, parse_template
+from src.template_parser.parser import parse_template
 from src.protocol.ts_generator import generate_all_ts_interfaces
 
 

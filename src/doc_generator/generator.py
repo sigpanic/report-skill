@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from docx import Document
-from docx.shared import Pt, Cm, Inches
+from docx.shared import Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn, nsdecls
 from docx.oxml import parse_xml
@@ -314,7 +314,9 @@ def _insert_section_content(title_para, content: str, images: list, content_tabl
             if line.strip():
                 run = new_p.add_run(line)
                 run.font.name = font_name
-                run._element.rPr.rFonts.set(qn('w:eastAsia'), font_name)
+                rPr = run._element.rPr
+                if rPr is not None:
+                    rPr.rFonts.set(qn('w:eastAsia'), font_name)
                 run.font.size = Pt(font_size_pt)
 
                 pf = new_p.paragraph_format

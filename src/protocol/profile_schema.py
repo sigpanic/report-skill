@@ -1,5 +1,5 @@
 from typing import Optional, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 
 class PageSetup(BaseModel):
@@ -139,16 +139,15 @@ def validate_profile_pydantic(data: dict) -> dict:
     try:
         profile = TemplateProfile.model_validate(data)
         return {"valid": True, "errors": [], "profile": profile.model_dump()}
-    except Exception as e:
+    except ValidationError as e:
         errors = []
-        if hasattr(e, 'errors'):
-            for err in e.errors():
-                loc = ".".join(str(l) for l in err.get("loc", []))
-                msg = err.get("msg", "")
-                errors.append(f"{loc}: {msg}")
-        else:
-            errors.append(str(e))
+        for err in e.errors():
+            loc = ".".join(str(l) for l in err.get("loc", []))
+            msg = err.get("msg", "")
+            errors.append(f"{loc}: {msg}")
         return {"valid": False, "errors": errors, "profile": None}
+    except Exception as e:
+        return {"valid": False, "errors": [str(e)], "profile": None}
 
 
 def fix_profile_pydantic(data: dict) -> dict:
@@ -156,11 +155,29 @@ def fix_profile_pydantic(data: dict) -> dict:
     if result["valid"]:
         profile = result["profile"]
     else:
-        profile = TemplateProfile(
-            template_path=data.get("template_path", ""),
-            page_setup=data.get("page_setup", {}),
-            format_rules=data.get("format_rules", {}),
-        ).model_dump()
+        try:
+            profile = TemplateProfile(
+                template_path=data.get("template_path", ""),
+                page_setup=data.get("page_setup", {}),
+                cover_page=data.get("cover_page", {}),
+                format_rules=data.get("format_rules", {}),
+            ).model_dump()
+        except Exception:
+            profile = TemplateProfile(
+                template_path="",
+                page_setup=PageSetup(
+                    page_width_cm=21.0, page_height_cm=29.7,
+                    left_margin_cm=2.54, right_margin_cm=2.54,
+                    top_margin_cm=2.54, bottom_margin_cm=2.54
+                ),
+                cover_page=CoverPage(),
+                format_rules=FormatRules(
+                    body_text=BodyTextStyle(font_name="宋体", font_size_pt=12),
+                    section_header=SectionHeaderStyle(font_name="黑体", font_size_pt=14, bold=True),
+                    line_spacing_pt=22, first_line_indent_chars=2,
+                    space_before=0, space_after=0
+                ),
+            ).model_dump()
         for key in ["cover_page", "tables", "sections",
                      "annotation_patterns", "removal_patterns"]:
             if key in data:

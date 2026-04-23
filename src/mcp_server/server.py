@@ -79,8 +79,6 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 return [TextContent(type="text", text=f"Profile格式验证失败，请修正以下错误后再试：\n{errors_str}")]
 
             profile = fix_profile_pydantic(profile)
-            with open(profile_path, 'w', encoding='utf-8') as f:
-                json.dump(profile, f, ensure_ascii=False, indent=2)
 
             output = generate_report(
                 template_path=arguments["template_path"],
@@ -99,6 +97,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             profile_path = arguments["profile_path"]
             with open(profile_path, 'r', encoding='utf-8') as f:
                 profile = json.load(f)
+
+            validation = validate_profile_pydantic(profile)
+            if not validation["valid"]:
+                errors_str = "\n".join(f"  - {e}" for e in validation["errors"])
+                return [TextContent(type="text", text=f"Profile格式验证失败，请先修正：\n{errors_str}")]
+
+            profile = fix_profile_pydantic(profile)
 
             output = generate_skill(
                 profile=profile,

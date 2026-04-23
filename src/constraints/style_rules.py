@@ -1,10 +1,13 @@
-def get_style_rules(constraints: dict = None) -> dict:
+from typing import Optional
+
+
+def get_style_rules(constraints: Optional[dict] = None) -> dict:
     if constraints:
         return constraints
     return {}
 
 
-def get_style_rules_text(constraints: dict = None) -> str:
+def get_style_rules_text(constraints: Optional[dict] = None) -> str:
     if not constraints:
         return "（无特殊约束，按通用学术报告风格撰写）"
 

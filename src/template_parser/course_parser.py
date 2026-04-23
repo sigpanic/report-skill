@@ -2,7 +2,7 @@ import os
 import json
 import tempfile
 import shutil
-from typing import Optional
+from typing import Optional, cast
 
 
 def parse_course_material(file_path: str, enable_ocr: bool = True) -> dict:
@@ -41,7 +41,7 @@ def _parse_pptx(file_path: str, enable_ocr: bool = True) -> dict:
             }
             for shape in slide.shapes:
                 if shape.has_text_frame:
-                    for para in shape.text_frame.paragraphs:
+                    for para in shape.text_frame.paragraphs:  # type: ignore[union-attr]
                         text = para.text.strip()
                         if text:
                             slide_content["texts"].append(text)
@@ -52,7 +52,8 @@ def _parse_pptx(file_path: str, enable_ocr: bool = True) -> dict:
                         if ocr_text:
                             ocr_texts.append(f"[幻灯片{i+1}图片文字]: {ocr_text}")
                 if shape.has_table:
-                    table = shape.table
+                    from pptx.table import Table as PptxTable
+                    table = cast(PptxTable, shape.table)  # type: ignore[union-attr]
                     for row in table.rows:
                         row_text = []
                         for cell in row.cells:
