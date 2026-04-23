@@ -22,8 +22,10 @@ DEFAULT_LABEL_MAPPINGS = {
     "教师": "teacher",
     "老师": "teacher",
     "实验名称": "experiment_name",
+    "名称": "experiment_name",
     "实验日期": "experiment_date",
     "日期": "experiment_date",
+    "年月日": "experiment_date",
     "实验地点": "experiment_location",
     "地点": "experiment_location",
     "实验成绩": "score",
@@ -185,11 +187,12 @@ def _analyze_tables(raw: dict, label_mappings: dict = None) -> list:
                 continue
 
             if is_hint or (not is_label and cell_text):
-                key = _table_cell_to_key(cell_text, is_hint, row, col, table_data, label_mappings)
+                adjacent_label = _find_adjacent_label(table_data, row, col)
+                key = _determine_field_key(cell_text, adjacent_label, is_hint, row, col, table_data, label_mappings)
                 field = {
                     "key": key,
                     "cell": f"{row},{col}",
-                    "label": _find_adjacent_label(table_data, row, col),
+                    "label": adjacent_label if adjacent_label else cell_text,
                     "type": "table_cell",
                     "is_hint": is_hint,
                     "style": _extract_cell_style(paras)
@@ -198,13 +201,13 @@ def _analyze_tables(raw: dict, label_mappings: dict = None) -> list:
                     field["colspan"] = cell["colspan"]
                 table_info["fields"].append(field)
             elif not is_label and not cell_text:
-                label = _find_adjacent_label(table_data, row, col)
-                if label:
-                    key = _table_cell_to_key(label, False, row, col, table_data, label_mappings)
+                adjacent_label = _find_adjacent_label(table_data, row, col)
+                if adjacent_label:
+                    key = _determine_field_key("", adjacent_label, False, row, col, table_data, label_mappings)
                     field = {
                         "key": key,
                         "cell": f"{row},{col}",
-                        "label": label,
+                        "label": adjacent_label,
                         "type": "table_cell",
                         "is_hint": False,
                         "style": _extract_cell_style(paras)
@@ -222,6 +225,35 @@ def _analyze_tables(raw: dict, label_mappings: dict = None) -> list:
     return tables_info
 
 
+def _determine_field_key(cell_text: str, adjacent_label: str, is_hint: bool,
+                          row: int, col: int, table_data: dict,
+                          label_mappings: dict = None) -> str:
+    mappings = label_mappings or DEFAULT_LABEL_MAPPINGS
+
+    if adjacent_label:
+        label_clean = re.sub(r'[：:]', '', adjacent_label).replace(" ", "")
+        for cn, en in mappings.items():
+            cn_clean = cn.replace(" ", "")
+            if cn_clean in label_clean or label_clean in cn_clean:
+                return en
+
+    if cell_text:
+        text_clean = re.sub(r'[^\w\u4e00-\u9fff]', '', cell_text)
+        for cn, en in mappings.items():
+            cn_clean = cn.replace(" ", "")
+            if cn_clean in text_clean or text_clean in cn_clean:
+                return en
+
+    if not cell_text or not cell_text.strip():
+        return f"cell_r{row}c{col}"
+
+    clean = re.sub(r'[^\w\u4e00-\u9fff]', '', cell_text)
+    if clean:
+        return f"cell_{clean[:10]}"
+
+    return f"cell_r{row}c{col}"
+
+
 def _is_label_cell(paras: list, cell_text: str, label_mappings: dict = None) -> bool:
     keywords = label_mappings.keys() if label_mappings else DEFAULT_LABEL_KEYWORDS
     for kw in keywords:
@@ -235,33 +267,6 @@ def _is_hint_cell(paras: list) -> bool:
         r.get("italic") or r.get("font_color") in ["FF0000", "ff0000"]
         for p in paras for r in p.get("runs", [])
     )
-
-
-def _table_cell_to_key(text: str, is_hint: bool, row: int = 0, col: int = 0, table_data: dict = None, label_mappings: dict = None) -> str:
-    mappings = label_mappings or DEFAULT_LABEL_MAPPINGS
-
-    if is_hint or text:
-        clean = re.sub(r'[^\w\u4e00-\u9fff]', '', text)
-        for cn, en in mappings.items():
-            cn_clean = cn.replace(" ", "")
-            if cn_clean in clean:
-                return en
-
-    if not text or not text.strip():
-        if table_data:
-            label = _find_adjacent_label(table_data, row, col)
-            for cn, en in mappings.items():
-                if cn in label:
-                    return en
-
-    if re.match(r'^[A-Za-z]\d+-\d+$', text.strip()):
-        return "experiment_location"
-
-    clean = re.sub(r'[^\w\u4e00-\u9fff]', '', text)
-    if clean:
-        return f"cell_{clean[:10]}"
-
-    return f"cell_r{row}c{col}"
 
 
 def _find_adjacent_label(table_data: dict, row: int, col: int) -> str:
@@ -322,12 +327,18 @@ def _is_section_header(text: str, runs: list) -> bool:
         return False
 
     patterns = [
-        r'^[一二三四五六七八九十]+[、．.]',
-        r'^\d+[、．.]',
-        r'^[A-Za-z]+[、．.]',
+        r'^[一二三四五六七八九十]+[、．.\s]',
+        r'^\d+[、．.\s]',
+        r'^[A-Za-z]+[、．.\s]',
         r'^Part\s+\d',
         r'^Chapter\s+\d',
         r'^Section\s+\d',
+        r'^\(\d+\)',
+        r'^\[\d+\]',
+        r'^\d+\)',
+        r'^[（(][一二三四五六七八九十]+[）)]',
+        r'^Step\s+\d',
+        r'^Procedure\s+\d',
     ]
 
     for pattern in patterns:
@@ -336,6 +347,14 @@ def _is_section_header(text: str, runs: list) -> bool:
             font_size = runs[0].get("font_size_pt", 0)
             return has_bold or font_size >= 13
 
+    has_bold = any(r.get("bold") for r in runs)
+    font_size = runs[0].get("font_size_pt", 0) if runs else 0
+    if has_bold and 16 <= font_size < 26:
+        if len(text) <= 30 and not text.endswith(('。', '，', '：', '.', ',', ':', '；', ';')):
+            if any(kw in text for kw in DEFAULT_COLLEGE_KEYWORDS):
+                return False
+            return True
+
     return False
 
 
@@ -343,17 +362,40 @@ def _is_annotation(elem: dict) -> bool:
     runs = elem.get("runs", [])
     if not runs:
         return False
-    return any(r.get("italic") for r in runs)
+
+    if any(r.get("italic") for r in runs):
+        return True
+
+    for r in runs:
+        font_color = r.get("font_color", "").upper()
+        if font_color in ["FF0000", "CC0000", "FF3333", "FF6666", "CC3333"]:
+            return True
+
+    text = elem.get("text", "").strip()
+    hint_patterns = [
+        r'[（(]\s*(注|说明|提示|注意|Note|Hint|Remark|Attention)\s*[：:)]',
+        r'^(注|说明|提示|注意|Note|Hint|Remark)\s*[：:]',
+    ]
+    for pattern in hint_patterns:
+        if re.search(pattern, text, re.IGNORECASE):
+            return True
+
+    return False
 
 
 def _analyze_format_rules(raw: dict) -> dict:
     rules = raw.get("format_rules", {})
 
-    annotation_text = ""
     for elem in raw.get("elements", []):
         text = elem.get("text", "")
-        if "格式要求" in text or ("行间距" in text and "注" in text):
-            annotation_text += text + " "
+        format_keywords = [
+            "格式要求", "行间距", "字体要求", "字号要求",
+            "format requirement", "line spacing", "font size",
+            "首行缩进", "段间距", "排版要求", "排版格式",
+        ]
+        for kw in format_keywords:
+            if kw in text.lower() or kw in text:
+                break
 
     if not rules.get("body_text"):
         rules["body_text"] = {"font_name": "宋体", "font_size_pt": 12.0}
@@ -378,14 +420,19 @@ def _detect_annotation_patterns(raw: dict) -> list:
     for elem in raw.get("elements", []):
         text = elem.get("text", "").strip()
         if _is_annotation(elem) and text:
-            if "删除此注释" in text or "删除注释" in text:
-                patterns.add("删除此注释")
-            if "删除此说明" in text:
-                patterns.add("删除此说明")
-            if "delete this note" in text.lower():
-                patterns.add("delete this note")
-            if "remove this" in text.lower():
-                patterns.add("remove this")
+            delete_keywords = [
+                ("删除此注释", "删除此注释"), ("删除注释", "删除注释"),
+                ("删除此说明", "删除此说明"), ("删除说明", "删除说明"),
+                ("delete this note", "delete this note"),
+                ("remove this", "remove this"),
+                ("delete this", "delete this"),
+                ("请删除", "请删除"),
+                ("可删除", "可删除"),
+                ("可以删除", "可以删除"),
+            ]
+            for keyword, pattern in delete_keywords:
+                if keyword in text.lower():
+                    patterns.add(pattern)
 
     return list(patterns)
 

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from docx import Document
-from docx.shared import Pt, Cm
+from docx.shared import Pt, Cm, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn, nsdecls
 from docx.oxml import parse_xml
@@ -48,32 +48,41 @@ def generate_report(
     out_path = Path(output_path)
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
 
-    docx_output = output_path
-    doc.save(docx_output)
-
     if template_is_doc and out_path.suffix.lower() == '.doc':
+        tmp_dir2 = tempfile.mkdtemp()
+        docx_output = os.path.join(tmp_dir2, "temp_output.docx")
+        doc.save(docx_output)
         doc_to_save = _docx_to_doc(docx_output, output_path)
         if doc_to_save:
             try:
                 os.remove(docx_output)
-            except:
+            except Exception:
                 pass
             return doc_to_save
-        return docx_output
+        shutil.copy2(docx_output, output_path)
+        try:
+            os.remove(docx_output)
+        except Exception:
+            pass
+        return output_path
 
-    return docx_output
+    doc.save(output_path)
+    return output_path
 
 
 def _docx_to_doc(docx_path: str, doc_output_path: str) -> Optional[str]:
-    """使用COM将docx转回doc格式"""
     try:
         import win32com.client
         word = win32com.client.Dispatch("Word.Application")
         word.Visible = False
-        doc = word.Documents.Open(os.path.abspath(docx_path))
-        doc.SaveAs2(os.path.abspath(doc_output_path), FileFormat=0)
-        doc.Close()
-        word.Quit()
+        try:
+            doc = word.Documents.Open(os.path.abspath(docx_path))
+            try:
+                doc.SaveAs2(os.path.abspath(doc_output_path), FileFormat=0)
+            finally:
+                doc.Close()
+        finally:
+            word.Quit()
         return doc_output_path
     except Exception as e:
         print(f"docx转doc失败: {e}")
@@ -106,18 +115,6 @@ def _fuzzy_match_label(text: str, label: str) -> bool:
 
 
 def _replace_cover_field_run_level(para, label: str, value: str, field: dict):
-    """
-    Run级别精确替换封面字段值，保持原始格式。
-    
-    模板中的典型结构：
-    Run[0]: "实验课程：" (无下划线) - 标签
-    Run[1]: " " (下划线) - 值开始
-    Run[2]: "  " (下划线) - 值区域
-    Run[3]: "算法设计与分析" (下划线) - 实际值
-    Run[4]: "   " (下划线) - 填充空格
-    
-    策略：保留标签run不变，在值区域runs中替换值，保持下划线格式。
-    """
     if not para.runs:
         return
 
@@ -149,8 +146,6 @@ def _replace_cover_field_run_level(para, label: str, value: str, field: dict):
         return
 
     total_value_len = sum(len(r.text) for r in value_runs)
-    original_value = "".join(r.text for r in value_runs)
-    original_value_stripped = original_value.strip()
 
     new_value = value
     padding_needed = max(0, total_value_len - len(new_value))
@@ -169,12 +164,9 @@ def _replace_cover_field_run_level(para, label: str, value: str, field: dict):
             char_idx += run_len
         else:
             run.text = padded_value[char_idx:]
-            if len(run.text) < len(new_value) and char_idx < len(new_value):
-                run.text = new_value[char_idx:]
 
 
 def _replace_para_simple(para, label: str, value: str, field: dict):
-    """简单替换（fallback）"""
     has_underline = field.get("type") == "text_with_underline" or any(
         r.font.underline for r in para.runs
     )
@@ -217,11 +209,11 @@ def _fill_table_fields(doc, profile: dict, field_values: dict):
 
 
 def _fill_cell_preserving_style(cell, value: str, field: dict):
-    """填充表格单元格，保持原有run格式"""
     if not cell.paragraphs:
         return
 
     p = cell.paragraphs[0]
+    original_alignment = p.alignment
 
     if p.runs:
         hint_runs = [r for r in p.runs if r.font.italic or _is_hint_run(r)]
@@ -230,11 +222,14 @@ def _fill_cell_preserving_style(cell, value: str, field: dict):
                 r.text = ""
             hint_runs[0].text = value
             hint_runs[0].font.italic = False
-            for attr in ['font_color', 'color']:
-                try:
-                    hint_runs[0].font.color.rgb = None
-                except:
-                    pass
+            try:
+                hint_runs[0].font.color.rgb = None
+            except Exception:
+                pass
+            if original_alignment is not None:
+                p.alignment = original_alignment
+            else:
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             return
 
         for r in p.runs:
@@ -250,17 +245,19 @@ def _fill_cell_preserving_style(cell, value: str, field: dict):
         run.font.size = Pt(font_size)
         run.font.bold = True
 
-    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    if original_alignment is not None:
+        p.alignment = original_alignment
+    else:
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
 
 def _is_hint_run(run) -> bool:
-    """判断是否是提示性run（需要被替换的）"""
     try:
         if run.font.color and run.font.color.rgb:
             rgb = str(run.font.color.rgb).upper()
             if rgb in ["FF0000", "CC0000", "FF3333"]:
                 return True
-    except:
+    except Exception:
         pass
     return False
 
@@ -331,8 +328,8 @@ def _insert_section_content(title_para, content: str, images: list, content_tabl
                 insert_after = img_para_xml
 
                 img_para = Paragraph(img_para_xml, title_para._element.getparent())
-                run = img_para.add_run()
-                run.add_picture(img_path, width=Cm(12))
+                img_run = img_para.add_run()
+                img_run.add_picture(img_path, width=Cm(12))
 
 
 def _remove_annotations(doc, profile: dict):
@@ -369,10 +366,6 @@ def _remove_annotations(doc, profile: dict):
 
 
 def _create_table_element(table_data: dict, font_name: str, font_size_pt: float):
-    """
-    创建Word表格的XML元素。
-    table_data格式: {"headers": ["列1", "列2"], "rows": [["值1", "值2"], ...]}
-    """
     headers = table_data.get("headers", [])
     rows = table_data.get("rows", [])
     num_cols = len(headers) if headers else (len(rows[0]) if rows else 0)

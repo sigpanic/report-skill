@@ -6,17 +6,33 @@ from pathlib import Path
 from typing import Optional
 
 def doc_to_docx(doc_path: str) -> Optional[str]:
-    """使用pywin32 COM将.doc转为.docx，返回.docx临时文件路径"""
     try:
         import win32com.client
         word = win32com.client.Dispatch("Word.Application")
         word.Visible = False
-        doc = word.Documents.Open(os.path.abspath(doc_path))
-        tmp_dir = tempfile.mkdtemp()
-        docx_path = os.path.join(tmp_dir, "converted.docx")
-        doc.SaveAs2(os.path.abspath(docx_path), FileFormat=16)
-        doc.Close()
-        word.Quit()
+        word.DisplayAlerts = False
+        docx_path = None
+        try:
+            doc = word.Documents.Open(
+                os.path.abspath(doc_path),
+                ReadOnly=True,
+                AddToRecentFiles=False,
+                Visible=False
+            )
+            try:
+                tmp_dir = tempfile.mkdtemp()
+                docx_path = os.path.join(tmp_dir, "converted.docx")
+                doc.SaveAs2(os.path.abspath(docx_path), FileFormat=16)
+            finally:
+                try:
+                    doc.Close(False)
+                except Exception:
+                    pass
+        finally:
+            try:
+                word.Quit()
+            except Exception:
+                pass
         return docx_path
     except Exception as e:
         print(f"doc转docx失败: {e}")

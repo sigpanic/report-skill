@@ -1,48 +1,78 @@
 import os
 import json
 import sys
+import tempfile
+import shutil
 from typing import Optional
 
 from docx import Document
 from docx.shared import Pt
 
+from src.template_parser.parser import doc_to_docx
+
 
 def verify_format(template_path: str, generated_path: str, output_path: Optional[str] = None) -> dict:
-    """
-    对比模板和生成文档的格式差异，返回验证结果。
-    """
-    template_doc = Document(template_path)
-    generated_doc = Document(generated_path)
+    template_docx = _ensure_docx(template_path)
+    generated_docx = _ensure_docx(generated_path)
 
-    results = {
-        "page_setup": _verify_page_setup(template_doc, generated_doc),
-        "paragraphs": _verify_paragraphs(template_doc, generated_doc),
-        "tables": _verify_tables(template_doc, generated_doc),
-        "passed": True,
-        "issues": []
-    }
+    try:
+        template_doc = Document(template_docx)
+        generated_doc = Document(generated_docx)
 
-    for category, checks in results.items():
-        if category in ["passed", "issues"]:
-            continue
-        if isinstance(checks, dict):
-            for key, value in checks.items():
-                if value is False:
-                    results["passed"] = False
-                    results["issues"].append(f"{category}.{key}: 不一致")
-        elif isinstance(checks, list):
-            for i, check in enumerate(checks):
-                if isinstance(check, dict):
-                    for key, value in check.items():
-                        if value is False and key != "text_match":
-                            results["passed"] = False
-                            results["issues"].append(f"{category}[{i}].{key}: 不一致")
+        results = {
+            "page_setup": _verify_page_setup(template_doc, generated_doc),
+            "paragraphs": _verify_paragraphs(template_doc, generated_doc),
+            "tables": _verify_tables(template_doc, generated_doc),
+            "passed": True,
+            "issues": []
+        }
 
-    if output_path:
-        with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(results, f, ensure_ascii=False, indent=2)
+        for category, checks in results.items():
+            if category in ["passed", "issues"]:
+                continue
+            if isinstance(checks, dict):
+                for key, value in checks.items():
+                    if value is False:
+                        results["passed"] = False
+                        results["issues"].append(f"{category}.{key}: 不一致")
+            elif isinstance(checks, list):
+                for i, check in enumerate(checks):
+                    if isinstance(check, dict):
+                        for key, value in check.items():
+                            if value is False and key != "text_match":
+                                results["passed"] = False
+                                results["issues"].append(f"{category}[{i}].{key}: 不一致")
 
-    return results
+        if output_path:
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(results, f, ensure_ascii=False, indent=2)
+
+        return results
+    finally:
+        if template_docx != template_path and os.path.exists(template_docx):
+            try:
+                os.remove(template_docx)
+            except:
+                pass
+        if generated_docx != generated_path and os.path.exists(generated_docx):
+            try:
+                os.remove(generated_docx)
+            except:
+                pass
+
+
+def _ensure_docx(file_path: str) -> str:
+    if file_path.lower().endswith('.docx'):
+        return file_path
+
+    converted = doc_to_docx(file_path)
+    if converted:
+        return converted
+
+    tmp_dir = tempfile.mkdtemp()
+    docx_path = os.path.join(tmp_dir, "converted.docx")
+    shutil.copy2(file_path, docx_path)
+    return docx_path
 
 
 def _verify_page_setup(template_doc, generated_doc) -> dict:

@@ -10,12 +10,14 @@ def generate_skill(
     constraints: Optional[dict] = None
 ) -> str:
     template_name = _infer_template_name(profile)
+    template_rules = _generate_template_rules(profile)
     fields_desc = _generate_fields_description(profile)
     sections_desc = _generate_sections_description(profile)
     format_desc = _generate_format_description(profile)
     constraints_desc = _generate_constraints_description(constraints)
     workflow_desc = _generate_workflow(profile, skill_name)
-    template_rules = _generate_template_rules(profile)
+
+    template_path_display = os.path.basename(profile.get('template_path', ''))
 
     skill_content = f"""# {skill_name}
 
@@ -23,7 +25,7 @@ def generate_skill(
 本Skill用于自动生成「{template_name}」Word文档，严格遵循模板格式。
 
 ## 模板信息
-- 模板文件: `{profile.get('template_path', '')}`
+- 模板文件: `{template_path_display}`
 - 纸张大小: {_page_size_desc(profile)}
 - 页边距: {_margin_desc(profile)}
 
@@ -31,15 +33,11 @@ def generate_skill(
 
 {template_rules}
 
-## 工作流程
-
-{workflow_desc}
-
 ## 字段定义
 
 {fields_desc}
 
-## 章节定义
+## 章节结构
 
 {sections_desc}
 
@@ -51,19 +49,19 @@ def generate_skill(
 
 {constraints_desc}
 
+## 工作流程
+
+{workflow_desc}
+
 ## MCP工具调用
 
-### 1. analyze_template（首次使用时调用）
+### analyze_template（首次使用时调用）
 分析Word模板，生成TemplateProfile。
-
-参数：
 - template_path (必需): 模板文件路径
 - output_path (可选): Profile保存路径
 
-### 2. generate_report（每次生成报告时调用）
+### generate_report（每次生成报告时调用）
 生成报告Word文档。
-
-参数：
 - template_path (必需): 模板文件路径
 - output_path (必需): 输出文件路径
 - profile_path (必需): TemplateProfile JSON文件路径
@@ -71,10 +69,8 @@ def generate_skill(
 - sections (必需): 章节内容数组，每项含title和content
 - result_images (可选): 结果截图路径列表
 
-### 3. verify_format（生成后验证）
+### verify_format（生成后验证）
 对比生成的Word文档与模板的格式差异。
-
-参数：
 - template_path (必需): 模板文件路径
 - generated_path (必需): 生成的文档路径
 
@@ -113,33 +109,30 @@ def _generate_template_rules(profile: dict) -> str:
     removal_patterns = profile.get("removal_patterns", [])
     sections = profile.get("sections", [])
 
-    lines.append("### 必须遵守的规则")
+    lines.append("### 自动删除规则")
     lines.append("")
-
     if annotation_patterns:
-        lines.append("- 模板中包含需要删除的注释段落，系统会自动删除包含以下关键词的段落：")
         for p in annotation_patterns:
-            lines.append(f"  - 「{p}」")
-        lines.append("")
-
+            lines.append(f"- 包含「{p}」的段落将被自动删除")
     if removal_patterns:
-        lines.append("- 模板中包含需要删除的说明段落，系统会自动删除包含以下关键词的段落：")
         for p in removal_patterns:
-            lines.append(f"  - 「{p}」")
-        lines.append("")
+            lines.append(f"- 包含「{p}」的段落将被自动删除")
+    if not annotation_patterns and not removal_patterns:
+        lines.append("- 无特殊删除规则")
+    lines.append("")
 
     notes_found = []
     for sec in sections:
         note = sec.get("note", "")
         if note:
-            notes_found.append(f"  - {sec['title']}: {note[:150]}{'...' if len(note) > 150 else ''}")
+            notes_found.append((sec['title'], note))
 
     if notes_found:
-        lines.append("### 各章节模板说明（必须遵守）")
+        lines.append("### 各章节要求（来自模板注释，必须遵守）")
         lines.append("")
-        for n in notes_found:
-            lines.append(n)
-        lines.append("")
+        for title, note in notes_found:
+            lines.append(f"**{title}**: {note}")
+            lines.append("")
 
     return "\n".join(lines)
 
@@ -189,23 +182,19 @@ def _generate_sections_description(profile: dict) -> str:
         return "（模板中无章节定义）"
 
     lines = []
-    for i, sec in enumerate(sections):
-        lines.append(f"### {sec['title']}")
-        if sec.get("note"):
-            lines.append(f"- 模板说明: {sec['note'][:150]}{'...' if len(sec.get('note', '')) > 150 else ''}")
+    for sec in sections:
         style = sec.get("style", {})
-        if style:
-            style_parts = []
-            if style.get("font_name"):
-                style_parts.append(f"字体={style['font_name']}")
-            if style.get("font_size_pt"):
-                style_parts.append(f"字号={style['font_size_pt']}pt")
-            if style.get("bold"):
-                style_parts.append("加粗")
-            if style_parts:
-                lines.append(f"- 标题样式: {', '.join(style_parts)}")
-        lines.append("")
+        style_parts = []
+        if style.get("font_name"):
+            style_parts.append(style["font_name"])
+        if style.get("font_size_pt"):
+            style_parts.append(f"{style['font_size_pt']}pt")
+        if style.get("bold"):
+            style_parts.append("加粗")
+        style_str = ", ".join(style_parts) if style_parts else "默认"
+        lines.append(f"- **{sec['title']}** (标题样式: {style_str})")
 
+    lines.append("")
     return "\n".join(lines)
 
 
@@ -276,7 +265,7 @@ def _generate_workflow(profile: dict, skill_name: str) -> str:
 - 根据课件内容，准备各章节的文字内容
 - 章节列表：
 {section_list}
-- 每个章节的内容必须遵守模板中的说明（见上方"各章节模板说明"）
+- 每个章节的内容必须遵守上方"各章节要求"中的说明
 - 内容风格应自然，避免AI感
 
 ### 步骤3：准备字段值
