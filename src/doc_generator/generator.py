@@ -26,6 +26,8 @@ def generate_report(
     path = Path(template_path)
     work_docx = None
     template_is_doc = path.suffix.lower() == '.doc'
+    tmp_dir = None
+    tmp_dir2 = None
 
     if template_is_doc:
         converted = doc_to_docx(template_path)
@@ -38,38 +40,39 @@ def generate_report(
         work_docx = os.path.join(tmp_dir, "template_copy.docx")
         shutil.copy2(template_path, work_docx)
 
-    doc = Document(work_docx)
+    try:
+        doc = Document(work_docx)
 
-    _fill_cover_fields(doc, profile, field_values)
-    _fill_table_fields(doc, profile, field_values)
-    _fill_sections(doc, profile, sections)
-    _remove_annotations(doc, profile)
+        _fill_cover_fields(doc, profile, field_values)
+        _fill_table_fields(doc, profile, field_values)
+        _fill_sections(doc, profile, sections)
+        _remove_annotations(doc, profile)
 
-    out_path = Path(output_path)
-    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        out_path = Path(output_path)
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
 
-    if template_is_doc and out_path.suffix.lower() == '.doc':
-        tmp_dir2 = tempfile.mkdtemp()
-        docx_output = os.path.join(tmp_dir2, "temp_output.docx")
-        doc.save(docx_output)
-        doc_to_save = _docx_to_doc(docx_output, output_path)
-        if doc_to_save:
-            try:
-                os.remove(docx_output)
-            except Exception:
-                pass
-            return doc_to_save
-        docx_output_path = str(out_path.with_suffix('.docx'))
-        shutil.copy2(docx_output, docx_output_path)
-        try:
-            os.remove(docx_output)
-        except Exception:
-            pass
-        print(f"⚠ docx转doc失败，已保存为docx格式: {docx_output_path}")
-        return docx_output_path
+        if template_is_doc:
+            output_path = str(out_path.with_suffix('.doc'))
+            tmp_dir2 = tempfile.mkdtemp()
+            docx_output = os.path.join(tmp_dir2, "temp_output.docx")
+            doc.save(docx_output)
+            doc_to_save = _docx_to_doc(docx_output, output_path)
+            if doc_to_save:
+                return doc_to_save
+            docx_output_path = str(out_path.with_suffix('.docx'))
+            shutil.copy2(docx_output, docx_output_path)
+            print(f"⚠ docx转doc失败，已保存为docx格式: {docx_output_path}")
+            return docx_output_path
 
-    doc.save(output_path)
-    return output_path
+        doc.save(output_path)
+        return output_path
+    finally:
+        for d in [tmp_dir, tmp_dir2]:
+            if d and os.path.exists(d):
+                try:
+                    shutil.rmtree(d)
+                except Exception:
+                    pass
 
 
 def _docx_to_doc(docx_path: str, doc_output_path: str) -> Optional[str]:

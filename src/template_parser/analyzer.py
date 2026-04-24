@@ -154,7 +154,12 @@ def get_analysis_guide() -> str:
 - key必须用英文: student_name, student_id, student_class, course_name, experiment_name, experiment_date, experiment_location, teacher, score, comment
 - 封面字段带下划线时type为"text_with_underline"
 - 表格字段的cell格式为"行,列"(如"0,1")，label取相邻左侧单元格文本
+- 表格中红色(font_color=FF0000)或斜体(italic)的文本是提示，is_hint必须设为true
+- 表格中标签列(如"实验名称")不是字段，只有值列才是字段，不要把标签列也加到fields中
 - 章节note是该标题后、下一标题前的注释文本
+- ⚠️ annotation_patterns和removal_patterns不能为空！必须识别模板中的注释/提示文本模式
+  - 常见模式："（注：", "注：", "删除此注释", "（写实验报告时，删除此注释）"
+  - 任何斜体或红色的提示文本都应被识别为需要删除的模式
 - fields数组留空即可，系统会自动从cover_page和tables中汇总
 - 如有不确定信息，询问用户"""
 

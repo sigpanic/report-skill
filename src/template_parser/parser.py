@@ -1,7 +1,7 @@
 import os
 import json
+import re
 import tempfile
-import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -182,7 +182,7 @@ def _parse_table(table) -> dict:
                     if row.cells[span_col]._tc is actual_cell._tc:
                         cell_info["colspan"] = span_col - col_idx + 1
                         break
-                except:
+                except Exception:
                     pass
             
             cell_info["paragraphs"] = []
@@ -197,7 +197,6 @@ def _parse_table(table) -> dict:
     return result
 
 def _extract_format_rules(parsed: dict) -> dict:
-    """从解析结果中提取格式规则"""
     rules = {
         "section_header": {"font_name": "黑体", "font_size_pt": 14.0, "bold": True},
         "body_text": {"font_name": "宋体", "font_size_pt": 12.0},
@@ -206,9 +205,25 @@ def _extract_format_rules(parsed: dict) -> dict:
         "space_before": 0,
         "space_after": 0
     }
-    
+
+    section_patterns = [
+        r'^[一二三四五六七八九十]+、',
+        r'^[（(][一二三四五六七八九十]+[）)]',
+        r'^\d+[\.、]\s',
+        r'^\d+\.\d+\s',
+        r'^Chapter\s+\d+',
+        r'^Section\s+\d+',
+    ]
+
     for elem in parsed["elements"]:
-        if elem.get("text", "").startswith("一、"):
+        text = elem.get("text", "").strip()
+        is_section = False
+        for pattern in section_patterns:
+            if re.match(pattern, text):
+                is_section = True
+                break
+
+        if is_section:
             for run in elem.get("runs", []):
                 if run.get("font_name"):
                     rules["section_header"]["font_name"] = run["font_name"]
@@ -217,7 +232,7 @@ def _extract_format_rules(parsed: dict) -> dict:
                 if run.get("bold"):
                     rules["section_header"]["bold"] = run["bold"]
             break
-    
+
     return rules
 
 def save_parsed_template(parsed: dict, output_path: str):

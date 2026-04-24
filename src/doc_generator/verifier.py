@@ -1,12 +1,10 @@
 import os
 import json
-import sys
 import tempfile
 import shutil
 from typing import Optional
 
 from docx import Document
-from docx.shared import Pt
 
 from src.template_parser.parser import doc_to_docx
 
@@ -52,12 +50,12 @@ def verify_format(template_path: str, generated_path: str, output_path: Optional
         if template_docx != template_path and os.path.exists(template_docx):
             try:
                 os.remove(template_docx)
-            except:
+            except Exception:
                 pass
         if generated_docx != generated_path and os.path.exists(generated_docx):
             try:
                 os.remove(generated_docx)
-            except:
+            except Exception:
                 pass
 
 
@@ -148,7 +146,7 @@ def _compare_font_name(run_a, run_b) -> bool:
         a_east = run_a._element.rPr.rFonts.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}eastAsia')
         b_east = run_b._element.rPr.rFonts.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}eastAsia')
         return a_east == b_east
-    except:
+    except Exception:
         return False
 
 
