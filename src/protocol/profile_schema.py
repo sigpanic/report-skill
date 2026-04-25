@@ -17,14 +17,14 @@ class CoverTitle(BaseModel):
     text: str
     style: dict = Field(default_factory=dict)
 
-    model_config = {"extra": "allow"}
+    model_config = {"extra": "forbid"}
 
 
 class CoverCollege(BaseModel):
     text: str
     style: dict = Field(default_factory=dict)
 
-    model_config = {"extra": "allow"}
+    model_config = {"extra": "forbid"}
 
 
 class CoverField(BaseModel):
@@ -34,7 +34,7 @@ class CoverField(BaseModel):
     default: str = ""
     style: dict = Field(default_factory=dict)
 
-    model_config = {"extra": "allow"}
+    model_config = {"extra": "forbid"}
 
 
 class CoverPage(BaseModel):
@@ -42,7 +42,7 @@ class CoverPage(BaseModel):
     fields: list[CoverField] = Field(default_factory=list)
     college: Optional[CoverCollege] = None
 
-    model_config = {"extra": "allow"}
+    model_config = {"extra": "forbid"}
 
 
 class TableField(BaseModel):
@@ -53,7 +53,7 @@ class TableField(BaseModel):
     is_hint: bool = False
     style: dict = Field(default_factory=dict)
 
-    model_config = {"extra": "allow"}
+    model_config = {"extra": "forbid"}
 
 
 class TableInfo(BaseModel):
@@ -63,7 +63,7 @@ class TableInfo(BaseModel):
     column_widths_cm: list[float] = Field(default_factory=list)
     fields: list[TableField] = Field(default_factory=list)
 
-    model_config = {"extra": "allow"}
+    model_config = {"extra": "forbid"}
 
 
 class SectionStyle(BaseModel):
@@ -71,7 +71,7 @@ class SectionStyle(BaseModel):
     font_size_pt: float
     bold: bool
 
-    model_config = {"extra": "allow"}
+    model_config = {"extra": "forbid"}
 
 
 class SectionInfo(BaseModel):
@@ -79,14 +79,14 @@ class SectionInfo(BaseModel):
     style: SectionStyle
     note: str = ""
 
-    model_config = {"extra": "allow"}
+    model_config = {"extra": "forbid"}
 
 
 class BodyTextStyle(BaseModel):
     font_name: str
     font_size_pt: float
 
-    model_config = {"extra": "allow"}
+    model_config = {"extra": "forbid"}
 
 
 class SectionHeaderStyle(BaseModel):
@@ -94,7 +94,7 @@ class SectionHeaderStyle(BaseModel):
     font_size_pt: float
     bold: bool
 
-    model_config = {"extra": "allow"}
+    model_config = {"extra": "forbid"}
 
 
 class FormatRules(BaseModel):
@@ -105,7 +105,7 @@ class FormatRules(BaseModel):
     space_before: int
     space_after: int
 
-    model_config = {"extra": "allow"}
+    model_config = {"extra": "forbid"}
 
 
 class FieldEntry(BaseModel):
@@ -118,7 +118,7 @@ class FieldEntry(BaseModel):
     cell: Optional[str] = None
     is_hint: Optional[bool] = None
 
-    model_config = {"extra": "allow"}
+    model_config = {"extra": "forbid"}
 
 
 class TemplateProfile(BaseModel):
@@ -132,7 +132,7 @@ class TemplateProfile(BaseModel):
     removal_patterns: list[str] = Field(default_factory=list)
     fields: list[FieldEntry] = Field(default_factory=list)
 
-    model_config = {"extra": "allow"}
+    model_config = {"extra": "forbid"}
 
 
 def validate_profile_pydantic(data: dict) -> dict:

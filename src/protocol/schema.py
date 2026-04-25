@@ -1,6 +1,6 @@
 ANALYZE_TEMPLATE_SCHEMA = {
     "name": "analyze_template",
-    "description": "分析Word模板文档，生成TemplateProfile。TemplateProfile是模板的完整结构化描述，包含封面字段、表格字段、章节定义、格式规则等。分析结果可用于后续生成报告或生成特化Skill。",
+    "description": "分析Word模板文档，提取紧凑格式的原始数据(compact)和TypeScript接口定义。返回的compact数据是原始解析结果，不是TemplateProfile JSON。你必须根据compact数据和TS接口定义，自己编写TemplateProfile JSON，然后调用save_profile保存。",
     "inputSchema": {
         "type": "object",
         "properties": {
@@ -10,7 +10,7 @@ ANALYZE_TEMPLATE_SCHEMA = {
             },
             "output_path": {
                 "type": "string",
-                "description": "TemplateProfile JSON保存路径（可选，不提供则不保存）"
+                "description": "compact原始数据JSON保存路径（可选，不提供则不保存）"
             }
         },
         "required": ["template_path"]
@@ -19,7 +19,7 @@ ANALYZE_TEMPLATE_SCHEMA = {
 
 GENERATE_REPORT_SCHEMA = {
     "name": "generate_report",
-    "description": "根据Word模板和TemplateProfile生成报告文档。接受模板路径、Profile、字段值和章节内容，输出格式严格符合模板的Word文档。",
+    "description": "根据Word模板和TemplateProfile生成报告文档。⚠️ 必须先读取特化Skill文件（.trae/skills/或.claude/skills/下的对应Skill），按Skill规定的工作流程调用本工具。不要跳过Skill直接调用本工具，否则可能遗漏字段、章节或格式要求。",
     "inputSchema": {
         "type": "object",
         "properties": {
@@ -131,7 +131,7 @@ GENERATE_SKILL_SCHEMA = {
 
 PARSE_COURSE_SCHEMA = {
     "name": "parse_course_material",
-    "description": "解析课件文件（支持pptx、docx、doc格式），提取文本内容。用于理解实验要求和课件内容。",
+    "description": "解析课件文件（支持pptx、docx、doc格式），提取文本内容。⚠️ 本工具仅在报告生成阶段使用，特化阶段不要调用。必须先读取特化Skill文件了解工作流程后再使用。",
     "inputSchema": {
         "type": "object",
         "properties": {
@@ -173,13 +173,13 @@ VERIFY_FORMAT_SCHEMA = {
 
 SAVE_PROFILE_SCHEMA = {
     "name": "save_profile",
-    "description": "保存TemplateProfile JSON到文件，并自动验证格式。LLM分析模板后，调用此工具保存Profile，系统会自动验证格式并补全缺失字段。如果验证失败，会返回具体错误信息供修正。",
+    "description": "保存TemplateProfile JSON到文件，并自动验证格式。你必须根据analyze_template返回的TypeScript接口定义编写TemplateProfile JSON，然后调用此工具保存。系统会自动验证格式并补全缺失字段。如果验证失败，会返回具体错误信息和TS接口定义供修正。⚠️ annotation_patterns和removal_patterns不能为空，必须识别模板中的注释/提示文本模式。",
     "inputSchema": {
         "type": "object",
         "properties": {
             "profile_json": {
                 "type": "object",
-                "description": "TemplateProfile JSON对象。必须严格遵循analyze_template返回的TypeScript接口定义。关键字段：template_path(string), page_setup(PageSetup), cover_page(CoverPage), format_rules(FormatRules)为必需；tables, sections, annotation_patterns, removal_patterns, fields为可选。fields数组留空[]即可，系统自动从cover_page和tables汇总。"
+                "description": "TemplateProfile JSON对象。必须严格遵循analyze_template返回的TypeScript接口定义。关键字段：template_path(string), page_setup(PageSetup), cover_page(CoverPage), format_rules(FormatRules)为必需；tables, sections, annotation_patterns, removal_patterns, fields为可选但重要。fields数组留空[]即可，系统自动从cover_page和tables汇总。"
             },
             "output_path": {
                 "type": "string",

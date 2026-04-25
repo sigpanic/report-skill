@@ -3,21 +3,24 @@ import json
 from typing import Optional
 
 
-SKILL_TEMPLATE = """# {skill_name}
+SKILL_TEMPLATE = """---
+name: "{skill_name}"
+description: "Generate '{template_name}' Word documents following template format strictly. Invoke when user wants to create this type of report."
+---
 
-## 概述
-本Skill用于自动生成「{template_name}」Word文档，严格遵循模板格式。
-模板已解析完毕，Profile JSON已就绪，本Skill指导你完成报告生成。
+# {skill_name}
+
+生成「{template_name}」Word文档，严格遵循模板格式。
+Profile JSON已就绪，本Skill指导你完成报告生成。
 
 ## 模板信息
 - 模板文件: `{template_filename}`
 - 纸张大小: {page_size}
 - 页边距: {margins}
-- Profile JSON: 已由通用Skill生成并保存
 
-## 模板规则
+## 自动删除规则
 
-{template_rules}
+{delete_rules}
 
 ## 字段定义
 
@@ -39,35 +42,36 @@ SKILL_TEMPLATE = """# {skill_name}
 
 {workflow_section}
 
-## MCP工具调用
+## MCP工具
 
 ### parse_course_material
 解析课件文件（pptx/ppt/docx/doc），提取文本内容。
-- file_path (必需): 课件文件路径
-- output_path (可选): 解析结果保存路径
+- file_path（必需）: 课件文件路径
+- output_path（可选）: 解析结果保存路径（默认保存在课件所在目录）
 
 ### generate_report
-生成报告Word文档（输出格式自动与模板一致，无需手动指定后缀）。
-- template_path (必需): 模板文件路径
-- output_path (必需): 输出文件路径（只需指定路径，后缀由工具自动处理）
-- profile_path (必需): TemplateProfile JSON文件路径
-- field_values (必需): 字段值字典
-- sections (必需): 章节内容数组，每项含title和content
-- result_images (可选): 结果截图路径列表
+生成报告Word文档（输出格式自动与模板一致）。
+- template_path（必需）: 模板文件路径
+- output_path（必需）: 输出文件路径（保存到实验子目录）
+- profile_path（必需）: TemplateProfile JSON文件路径
+- field_values（必需）: 字段值字典
+- sections（必需）: 章节内容数组，每项含title和content
+- result_images（可选）: 结果截图路径列表
 
 ### verify_format
 对比生成的Word文档与模板的格式差异。
-- template_path (必需): 模板文件路径
-- generated_path (必需): 生成的文档路径
+- template_path（必需）: 模板文件路径
+- generated_path（必需）: 生成的文档路径
 
 ## 关键注意事项
-- 生成的Word文档格式必须与模板完全一致，这是最高优先级
-- 所有注释段落会被自动删除（根据Profile中的annotation_patterns/removal_patterns）
+- 生成的Word文档格式必须与模板完全一致——最高优先级
+- 所有注释段落会被自动删除（根据annotation_patterns/removal_patterns）
 - 章节内容按Profile中的格式规则排版
 - 图片居中插入，宽度12cm
 - 如果有任何不确定的信息，直接询问用户，不要自己编造
 - 模板中的注释和说明必须遵守
-- 输出文件后缀由工具自动保证（.doc模板→.doc输出，.docx→.docx），无需手动处理
+- 输出文件后缀由工具自动保证（.doc模板→.doc输出，.docx→.docx）
+- 读取.env文件获取个人信息（STUDENT_ID, STUDENT_NAME, STUDENT_CLASS）
 """
 
 
@@ -81,7 +85,7 @@ def generate_skill(
     template_filename = os.path.basename(profile.get('template_path', ''))
     page_size = _page_size_desc(profile)
     margins = _margin_desc(profile)
-    template_rules = _generate_template_rules(profile)
+    delete_rules = _generate_delete_rules(profile)
     fields_section = _generate_fields_description(profile)
     sections_section = _generate_sections_description(profile)
     format_section = _generate_format_description(profile)
@@ -94,7 +98,7 @@ def generate_skill(
         template_filename=template_filename,
         page_size=page_size,
         margins=margins,
-        template_rules=template_rules,
+        delete_rules=delete_rules,
         fields_section=fields_section,
         sections_section=sections_section,
         format_section=format_section,
@@ -123,35 +127,19 @@ def _infer_template_name(profile: dict) -> str:
     return "文档报告"
 
 
-def _generate_template_rules(profile: dict) -> str:
+def _generate_delete_rules(profile: dict) -> str:
     lines = []
     annotation_patterns = profile.get("annotation_patterns", [])
     removal_patterns = profile.get("removal_patterns", [])
-    sections = profile.get("sections", [])
 
-    lines.append("### 自动删除规则")
-    lines.append("")
     if annotation_patterns or removal_patterns:
         for p in annotation_patterns:
             lines.append(f"- 包含「{p}」的段落将被自动删除")
         for p in removal_patterns:
-            lines.append(f"- 包含「{p}」的段落将被自动删除")
+            lines.append(f"- 匹配「{p}」的段落将被自动删除")
     else:
-        lines.append("- ⚠️ 未检测到自动删除规则！如果模板中有注释/提示文本（如红色斜体文字），请手动补充annotation_patterns")
+        lines.append("- ⚠️ 未检测到自动删除规则！如果模板中有注释/提示文本（红色/斜体），请手动补充annotation_patterns")
     lines.append("")
-
-    notes_found = []
-    for sec in sections:
-        note = sec.get("note", "")
-        if note:
-            notes_found.append((sec['title'], note))
-
-    if notes_found:
-        lines.append("### 各章节要求（来自模板注释，必须遵守）")
-        lines.append("")
-        for title, note in notes_found:
-            lines.append(f"**{title}**: {note}")
-            lines.append("")
 
     return "\n".join(lines)
 
@@ -211,7 +199,13 @@ def _generate_sections_description(profile: dict) -> str:
         if style.get("bold"):
             style_parts.append("加粗")
         style_str = ", ".join(style_parts) if style_parts else "默认"
-        lines.append(f"- **{sec['title']}** (标题样式: {style_str})")
+
+        note = sec.get("note", "")
+        if note:
+            lines.append(f"- **{sec['title']}** (样式: {style_str})")
+            lines.append(f"  - 要求: {note}")
+        else:
+            lines.append(f"- **{sec['title']}** (样式: {style_str})")
 
     lines.append("")
     return "\n".join(lines)
@@ -280,34 +274,40 @@ def _generate_workflow(profile: dict, skill_name: str) -> str:
 - 如果.env中存在对应信息，直接使用，不需要询问用户
 - .env中不存在的字段值才需要询问用户
 
-### 步骤2：读取课件（如有）
+### 步骤2：创建实验目录
+- 在类别目录下创建本次实验的子目录（英文简写命名，如maxsum/、sort/、graph/）
+- 课件文件放入实验子目录
+- 生成的报告和源代码也输出到实验子目录
+
+### 步骤3：读取课件（如有）
 - 如果用户提供了课件文件，调用`parse_course_material`解析课件
+- 解析结果默认保存在课件所在目录
 - 根据课件内容理解报告要求
 - 如果没有课件，根据用户描述理解要求
 
-### 步骤3：准备内容
+### 步骤4：准备内容
 - 根据课件/资料内容，准备各章节的文字内容
 - 章节列表：
 {section_list}
 - 每个章节的内容必须遵守上方"各章节要求"中的说明
 - 内容风格应自然，避免AI感
 
-### 步骤4：准备字段值
+### 步骤5：准备字段值
 - 收集所有需要填写的字段：
 {field_list}
 - 优先使用.env中的信息
 - 不确定的字段值必须询问用户
 
-### 步骤5：调用MCP工具生成文档
+### 步骤6：调用MCP工具生成文档
 - 调用 generate_report 工具，传入：
   - template_path: 模板文件路径
-  - output_path: 输出路径（后缀由工具自动处理）
+  - output_path: 输出路径（保存到实验子目录，后缀由工具自动处理）
   - profile_path: TemplateProfile JSON路径
   - field_values: 字段值字典
   - sections: 章节内容数组
 - sections数组中每项的title必须与Profile中的section title完全匹配
 
-### 步骤6：验证输出
+### 步骤7：验证输出
 - 调用 verify_format 工具验证格式一致性
 - 检查所有字段是否正确填充
 - 如果格式不一致，分析原因并修正"""

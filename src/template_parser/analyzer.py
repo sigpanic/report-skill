@@ -1,5 +1,6 @@
 import os
 import json
+import re
 
 from src.template_parser.parser import parse_template
 from src.protocol.ts_generator import generate_all_ts_interfaces
@@ -125,9 +126,64 @@ def analyze_template_compact(template_path: str) -> dict:
     return compact
 
 
+def check_profile_completeness(profile: dict, compact: dict) -> list:
+    warnings = []
+
+    if not profile.get("annotation_patterns"):
+        warnings.append("⚠️ annotation_patterns为空！模板中的注释/提示文本可能不会被删除。请检查模板中的斜体/红色/含'注'/'删除'的段落")
+
+    if not profile.get("removal_patterns"):
+        warnings.append("⚠️ removal_patterns为空！模板中的'删除此注释'等文本可能不会被删除")
+
+    cover_fields = profile.get("cover_page", {}).get("fields", [])
+    if not cover_fields:
+        warnings.append("⚠️ cover_page.fields为空！封面字段未识别")
+
+    tables = profile.get("tables", [])
+    for table in tables:
+        table_fields = table.get("fields", [])
+        for field in table_fields:
+            if field.get("is_hint") is None:
+                warnings.append(f"⚠️ 表格字段 '{field.get('key', '')}' 的is_hint未设置")
+            cell = field.get("cell", "")
+            if "_" in cell and "," not in cell:
+                warnings.append(f"⚠️ 表格字段 '{field.get('key', '')}' 的cell格式可能错误：'{cell}'，应为'行,列'格式如'0,1'")
+
+    sections = profile.get("sections", [])
+    if not sections:
+        warnings.append("⚠️ sections为空！章节未识别")
+
+    for section in sections:
+        if not section.get("note"):
+            has_italic = False
+            for elem in compact.get("content", []):
+                if elem.get("type") == "p" and elem.get("text", "").strip() == section.get("title", ""):
+                    next_idx = compact["content"].index(elem) + 1
+                    if next_idx < len(compact["content"]):
+                        next_elem = compact["content"][next_idx]
+                        next_runs = next_elem.get("runs", [])
+                        formats = compact.get("formats", {})
+                        for r in next_runs:
+                            if isinstance(r, dict):
+                                f = formats.get(r.get("f", ""), {})
+                                if f.get("italic"):
+                                    has_italic = True
+                    break
+            if has_italic:
+                warnings.append(f"⚠️ 章节 '{section.get('title', '')}' 后有斜体注释文本，但note为空")
+
+    format_rules = profile.get("format_rules", {})
+    if not format_rules.get("body_text", {}).get("font_name"):
+        warnings.append("⚠️ format_rules.body_text.font_name未设置")
+    if not format_rules.get("section_header", {}).get("font_name"):
+        warnings.append("⚠️ format_rules.section_header.font_name未设置")
+
+    return warnings
+
+
 def get_analysis_guide() -> str:
     ts_interfaces = generate_all_ts_interfaces()
-    return f"""请根据以上紧凑模板数据，分析模板结构并生成TemplateProfile JSON。
+    return f"""请根据以上compact数据，分析模板结构并编写TemplateProfile JSON。
 
 ## 数据格式说明
 - `formats`: 格式目录，键为格式ID(如f1,f2)，值为格式属性
@@ -137,8 +193,8 @@ def get_analysis_guide() -> str:
 - 表格cells中`r`=行,`c`=列,`cs`=列跨,`rs`=行跨
 
 ## 分析步骤
-1. **识别封面页**: 文档开头，包含大字标题(font_size_pt>=30)、学院名称、带冒号的标签字段
-2. **识别表格字段**: 表格中左侧列通常是标签(如"实验名称")，右侧列是值区域
+1. **识别封面页**: 文档开头，包含大字标题(font_size_pt>=30)、带冒号的标签字段
+2. **识别表格字段**: 表格中左侧列通常是标签(如"实验名称")，右侧列是值区域。红色/斜体文本是提示
 3. **识别章节标题**: 加粗+编号的段落(如"一、实验目的"、"1. Introduction")
 4. **识别注释/说明**: 斜体(italic)、红色(font_color=FF0000)、含"删除"/"注"等关键词的段落
 5. **识别格式要求**: 含"字体"/"字号"/"行间距"/"缩进"等关键词的段落
@@ -155,11 +211,8 @@ def get_analysis_guide() -> str:
 - 封面字段带下划线时type为"text_with_underline"
 - 表格字段的cell格式为"行,列"(如"0,1")，label取相邻左侧单元格文本
 - 表格中红色(font_color=FF0000)或斜体(italic)的文本是提示，is_hint必须设为true
-- 表格中标签列(如"实验名称")不是字段，只有值列才是字段，不要把标签列也加到fields中
-- 章节note是该标题后、下一标题前的注释文本
+- 表格中标签列(如"实验名称")不是字段，只有值列才是字段
 - ⚠️ annotation_patterns和removal_patterns不能为空！必须识别模板中的注释/提示文本模式
-  - 常见模式："（注：", "注：", "删除此注释", "（写实验报告时，删除此注释）"
-  - 任何斜体或红色的提示文本都应被识别为需要删除的模式
 - fields数组留空即可，系统会自动从cover_page和tables中汇总
 - 如有不确定信息，询问用户"""
 
