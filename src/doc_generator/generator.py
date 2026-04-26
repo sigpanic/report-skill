@@ -328,7 +328,8 @@ def _insert_result_images_after(title_para, image_paths: list, format_rules: dic
 
         img_para = Paragraph(img_para_xml, title_para._element.getparent())
         img_run = img_para.add_run()
-        img_run.add_picture(img_path, width=Cm(12))
+        img_width = format_rules.get("image_width_cm", 12.0)
+        img_run.add_picture(img_path, width=Cm(img_width))
 
 
 def _insert_section_content(title_para, content: str, images: list, content_tables: list,
@@ -383,10 +384,15 @@ def _insert_section_content(title_para, content: str, images: list, content_tabl
                     pf.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 elif alignment == "right":
                     pf.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                elif alignment == "left":
+                    pf.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                elif alignment == "justify":
+                    pf.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 
     if content_tables:
         for table_data in content_tables:
-            tbl_element = _create_table_element(table_data, font_name, font_size_pt)
+            tbl_element = _create_table_element(table_data, font_name, font_size_pt,
+                                                  format_rules.get("table_header_bg_color", ""))
             insert_after.addnext(tbl_element)
             insert_after = tbl_element
 
@@ -442,7 +448,7 @@ def _remove_annotations(doc, profile: dict):
         p_element.getparent().remove(p_element)
 
 
-def _create_table_element(table_data: dict, font_name: str, font_size_pt: float):
+def _create_table_element(table_data: dict, font_name: str, font_size_pt: float, header_bg_color: str = ""):
     headers = table_data.get("headers", [])
     rows = table_data.get("rows", [])
     num_cols = len(headers) if headers else (len(rows[0]) if rows else 0)
@@ -468,7 +474,7 @@ def _create_table_element(table_data: dict, font_name: str, font_size_pt: float)
         tbl_xml += '<w:tr>'
         for h in headers:
             h_escaped = h.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-            tbl_xml += f'<w:tc><w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="D9E2F3"/></w:tcPr>'
+            tbl_xml += f'<w:tc><w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="{header_bg_color}"/></w:tcPr>' if header_bg_color else '<w:tc><w:tcPr/>'
             tbl_xml += f'<w:p><w:pPr><w:jc w:val="center"/><w:rPr><w:rFonts w:eastAsia="{fn}"/><w:sz w:val="{sz}"/><w:b/></w:rPr></w:pPr>'
             tbl_xml += f'<w:r><w:rPr><w:rFonts w:eastAsia="{fn}"/><w:sz w:val="{sz}"/><w:b/></w:rPr><w:t>{h_escaped}</w:t></w:r>'
             tbl_xml += f'</w:p></w:tc>'

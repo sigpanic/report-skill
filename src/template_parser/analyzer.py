@@ -178,6 +178,26 @@ def check_profile_completeness(profile: dict, compact: dict) -> list:
     if not format_rules.get("section_header", {}).get("font_name"):
         warnings.append("⚠️ format_rules.section_header.font_name未设置")
 
+    for section in sections:
+        note = section.get("note", "")
+        requirements = section.get("requirements", [])
+        if note and not requirements:
+            hints = []
+            if "不少于" in note or "至少" in note or "以上" in note:
+                hints.append("数量约束")
+            if "字体" in note or "font" in note.lower():
+                hints.append("字体要求")
+            if "表格" in note or "列" in note:
+                hints.append("表格结构")
+            if "截图" in note or "流程图" in note or "图" in note:
+                hints.append("内容要求")
+            if hints:
+                warnings.append(f"⚠️ 章节 '{section.get('title', '')}' 的note包含可能的约束（{', '.join(hints)}），但requirements为空。请检查是否需要提取约束")
+
+    compact_tables = compact.get("tables", [])
+    if compact_tables and not tables:
+        warnings.append("⚠️ compact数据中有表格但Profile的tables为空！表格信息可能遗漏")
+
     return warnings
 
 

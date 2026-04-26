@@ -198,10 +198,10 @@ def _parse_table(table) -> dict:
 
 def _extract_format_rules(parsed: dict) -> dict:
     rules = {
-        "section_header": {"font_name": "黑体", "font_size_pt": 14.0, "bold": True},
-        "body_text": {"font_name": "宋体", "font_size_pt": 12.0},
-        "line_spacing_pt": 22,
-        "first_line_indent_chars": 2,
+        "section_header": {"font_name": "", "font_size_pt": 0, "bold": False},
+        "body_text": {"font_name": "", "font_size_pt": 0},
+        "line_spacing_pt": 0,
+        "first_line_indent_chars": 0,
         "space_before": 0,
         "space_after": 0
     }
@@ -215,6 +215,42 @@ def _extract_format_rules(parsed: dict) -> dict:
         r'^Section\s+\d+',
     ]
 
+    font_size_groups = {}
+    for elem in parsed["elements"]:
+        for run in elem.get("runs", []):
+            fs = run.get("font_size_pt", 0)
+            if fs > 0:
+                fn = run.get("font_name", "")
+                key = (fn, fs, run.get("bold", False))
+                font_size_groups[key] = font_size_groups.get(key, 0) + 1
+
+    body_candidate = None
+    header_candidate = None
+    if font_size_groups:
+        sorted_groups = sorted(font_size_groups.items(), key=lambda x: (-x[0][1], -x[1]))
+        body_candidate = sorted_groups[-1][0] if len(sorted_groups) == 1 else None
+        for (fn, fs, bold), count in sorted_groups:
+            if not bold and fs > 0:
+                body_candidate = (fn, fs, bold)
+                break
+        for (fn, fs, bold), count in sorted_groups:
+            if bold and fs > 0:
+                header_candidate = (fn, fs, bold)
+                break
+        if not header_candidate and len(sorted_groups) > 1:
+            for (fn, fs, bold), count in sorted_groups:
+                if body_candidate and fs > body_candidate[1]:
+                    header_candidate = (fn, fs, bold)
+                    break
+
+    if body_candidate:
+        rules["body_text"]["font_name"] = body_candidate[0]
+        rules["body_text"]["font_size_pt"] = body_candidate[1]
+    if header_candidate:
+        rules["section_header"]["font_name"] = header_candidate[0]
+        rules["section_header"]["font_size_pt"] = header_candidate[1]
+        rules["section_header"]["bold"] = header_candidate[2]
+
     for elem in parsed["elements"]:
         text = elem.get("text", "").strip()
         is_section = False
@@ -222,6 +258,15 @@ def _extract_format_rules(parsed: dict) -> dict:
             if re.match(pattern, text):
                 is_section = True
                 break
+
+        if not is_section:
+            runs = elem.get("runs", [])
+            if runs:
+                is_bold = any(r.get("bold") for r in runs)
+                max_fs = max((r.get("font_size_pt", 0) for r in runs), default=0)
+                body_fs = rules["body_text"]["font_size_pt"]
+                if is_bold and body_fs > 0 and max_fs > body_fs:
+                    is_section = True
 
         if is_section:
             for run in elem.get("runs", []):
@@ -232,5 +277,20 @@ def _extract_format_rules(parsed: dict) -> dict:
                 if run.get("bold"):
                     rules["section_header"]["bold"] = run["bold"]
             break
+
+    if not rules["body_text"]["font_name"]:
+        rules["body_text"]["font_name"] = "宋体"
+    if not rules["body_text"]["font_size_pt"]:
+        rules["body_text"]["font_size_pt"] = 12.0
+    if not rules["section_header"]["font_name"]:
+        rules["section_header"]["font_name"] = "黑体"
+    if not rules["section_header"]["font_size_pt"]:
+        rules["section_header"]["font_size_pt"] = 14.0
+    if not rules["section_header"]["bold"]:
+        rules["section_header"]["bold"] = True
+    if not rules["line_spacing_pt"]:
+        rules["line_spacing_pt"] = 22
+    if not rules["first_line_indent_chars"]:
+        rules["first_line_indent_chars"] = 2
 
     return rules

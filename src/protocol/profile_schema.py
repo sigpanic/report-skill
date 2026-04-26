@@ -124,6 +124,8 @@ class FormatRules(BaseModel):
     first_line_indent_chars: int
     space_before: int
     space_after: int
+    image_width_cm: float = 12.0
+    table_header_bg_color: str = ""
 
     model_config = {"extra": "forbid"}
 

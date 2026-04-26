@@ -1,7 +1,6 @@
 import os
 import json
 import tempfile
-import shutil
 from typing import Optional
 
 from docx import Document
@@ -176,10 +175,7 @@ def _ensure_docx(file_path: str) -> str:
     if converted:
         return converted
 
-    tmp_dir = tempfile.mkdtemp()
-    docx_path = os.path.join(tmp_dir, "converted.docx")
-    shutil.copy2(file_path, docx_path)
-    return docx_path
+    raise ValueError(f"无法转换.doc文件为.docx格式: {file_path}。请确保系统已安装Microsoft Word。")
 
 
 def _verify_page_setup(template_doc, generated_doc) -> dict:
