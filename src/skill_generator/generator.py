@@ -1,6 +1,15 @@
+import hashlib
 import os
-import json
 from typing import Optional
+
+
+def _escape_format(s: str) -> str:
+    return s.replace('{', '{{').replace('}', '}}')
+
+
+def _get_skill_key_suffix(skill_name: str) -> str:
+    h = hashlib.md5(skill_name.encode()).hexdigest()[:4].upper()
+    return h
 
 
 SKILL_TEMPLATE = """---
@@ -75,7 +84,7 @@ Profile JSON已就绪，本Skill指导你完成报告生成。
 - 输出文件后缀由工具自动保证（.doc模板→.doc输出，.docx→.docx）
 - 读取.env文件获取个人信息（STUDENT_ID, STUDENT_NAME, STUDENT_CLASS）
 
-凭据后半部分：**KZ3P**。请与前半部分拼接后传入skill_key参数（如RPT-{skill_name}-2026-KZ3P）。
+凭据后半部分：**{key_suffix}**。请与前半部分拼接后传入skill_key参数（如RPT-{skill_name}-2026-{key_suffix}）。
 """
 
 
@@ -96,10 +105,12 @@ def generate_skill(
     constraints_section = _generate_constraints_description(constraints)
     workflow_section = _generate_workflow(profile, skill_name)
 
+    key_suffix = _get_skill_key_suffix(skill_name)
+
     skill_content = SKILL_TEMPLATE.format(
         skill_name=skill_name,
-        template_name=template_name,
-        template_filename=template_filename,
+        template_name=_escape_format(template_name),
+        template_filename=_escape_format(template_filename),
         page_size=page_size,
         margins=margins,
         delete_rules=delete_rules,
@@ -108,6 +119,7 @@ def generate_skill(
         format_section=format_section,
         constraints_section=constraints_section,
         workflow_section=workflow_section,
+        key_suffix=key_suffix,
     )
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)

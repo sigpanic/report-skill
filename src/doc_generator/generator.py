@@ -4,6 +4,7 @@ import shutil
 import tempfile
 from pathlib import Path
 from typing import Optional
+from xml.sax.saxutils import escape as xml_escape
 
 from docx import Document
 from docx.shared import Pt, Cm
@@ -45,7 +46,7 @@ def generate_report(
 
         _fill_cover_fields(doc, profile, field_values)
         _fill_table_fields(doc, profile, field_values)
-        _fill_sections(doc, profile, sections)
+        _fill_sections(doc, profile, sections, result_images)
         _remove_annotations(doc, profile)
 
         out_path = Path(output_path)
@@ -213,9 +214,8 @@ def _fill_table_fields(doc, profile: dict, field_values: dict):
             if len(cell_pos) != 2:
                 continue
 
-            row, col = int(cell_pos[0]), int(cell_pos[1])
-
             try:
+                row, col = int(cell_pos[0]), int(cell_pos[1])
                 cell = table.cell(row, col)
                 _fill_cell_preserving_style(cell, value, field)
             except Exception:
@@ -276,7 +276,7 @@ def _is_hint_run(run) -> bool:
     return False
 
 
-def _fill_sections(doc, profile: dict, sections: list):
+def _fill_sections(doc, profile: dict, sections: list, result_images: list = None):
     format_rules = profile.get("format_rules", {})
     section_titles = {}
     for sec in sections:
@@ -288,6 +288,35 @@ def _fill_sections(doc, profile: dict, sections: list):
             sec = section_titles[text]
             _insert_section_content(para, sec.get("content", ""), sec.get("images", []), sec.get("tables", []), format_rules)
 
+    if result_images:
+        last_section_para = None
+        for para in doc.paragraphs:
+            text = para.text.strip()
+            if text in section_titles:
+                last_section_para = para
+        if last_section_para:
+            _insert_result_images_after(last_section_para, result_images, format_rules)
+
+
+def _insert_result_images_after(title_para, image_paths: list, format_rules: dict):
+    body_style = format_rules.get("body_text", {})
+    font_name = body_style.get("font_name", "宋体")
+
+    insert_after = title_para._element
+    for img_path in image_paths:
+        if not os.path.exists(img_path):
+            continue
+        img_para_xml = parse_xml(
+            f'<w:p {nsdecls("w")}><w:pPr><w:jc w:val="center"/></w:pPr></w:p>'
+        )
+        img_para_xml.set(qn('w:customXml'), "ins")
+        insert_after.addnext(img_para_xml)
+        insert_after = img_para_xml
+
+        img_para = Paragraph(img_para_xml, title_para._element.getparent())
+        img_run = img_para.add_run()
+        img_run.add_picture(img_path, width=Cm(12))
+
 
 def _insert_section_content(title_para, content: str, images: list, content_tables: list, format_rules: dict):
     body_style = format_rules.get("body_text", {})
@@ -296,6 +325,7 @@ def _insert_section_content(title_para, content: str, images: list, content_tabl
     line_spacing_pt = format_rules.get("line_spacing_pt", 22)
     indent_chars = format_rules.get("first_line_indent_chars", 2)
     indent_cm = indent_chars * 0.42
+    font_name_safe = xml_escape(font_name, {'"': '&quot;'})
 
     insert_after = title_para._element
 
@@ -305,10 +335,11 @@ def _insert_section_content(title_para, content: str, images: list, content_tabl
             new_para_xml = parse_xml(
                 f'<w:p {nsdecls("w")}>'
                 f'<w:pPr>'
-                f'<w:rPr><w:rFonts w:eastAsia="{font_name}"/><w:sz w:val="{int(font_size_pt * 2)}"/></w:rPr>'
+                f'<w:rPr><w:rFonts w:eastAsia="{font_name_safe}"/><w:sz w:val="{int(font_size_pt * 2)}"/></w:rPr>'
                 f'</w:pPr>'
                 f'</w:p>'
             )
+            new_para_xml.set(qn('w:customXml'), "ins")
             insert_after.addnext(new_para_xml)
             insert_after = new_para_xml
 
@@ -340,6 +371,7 @@ def _insert_section_content(title_para, content: str, images: list, content_tabl
                 img_para_xml = parse_xml(
                     f'<w:p {nsdecls("w")}><w:pPr><w:jc w:val="center"/></w:pPr></w:p>'
                 )
+                img_para_xml.set(qn('w:customXml'), "ins")
                 insert_after.addnext(img_para_xml)
                 insert_after = img_para_xml
 
@@ -354,6 +386,10 @@ def _remove_annotations(doc, profile: dict):
 
     paras_to_remove = []
     for para in doc.paragraphs:
+        p_element = para._element
+        if p_element.get(qn('w:customXml')) == "ins":
+            continue
+
         text = para.text.strip()
 
         should_remove = False
@@ -391,6 +427,7 @@ def _create_table_element(table_data: dict, font_name: str, font_size_pt: float)
 
     ns = nsdecls("w")
     sz = int(font_size_pt * 2)
+    fn = xml_escape(font_name, {'"': '&quot;'})
 
     tbl_xml = f'<w:tbl {ns}>'
     tbl_xml += f'<w:tblPr><w:tblBorders>'
@@ -407,8 +444,8 @@ def _create_table_element(table_data: dict, font_name: str, font_size_pt: float)
         for h in headers:
             h_escaped = h.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
             tbl_xml += f'<w:tc><w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="D9E2F3"/></w:tcPr>'
-            tbl_xml += f'<w:p><w:pPr><w:jc w:val="center"/><w:rPr><w:rFonts w:eastAsia="{font_name}"/><w:sz w:val="{sz}"/><w:b/></w:rPr></w:pPr>'
-            tbl_xml += f'<w:r><w:rPr><w:rFonts w:eastAsia="{font_name}"/><w:sz w:val="{sz}"/><w:b/></w:rPr><w:t>{h_escaped}</w:t></w:r>'
+            tbl_xml += f'<w:p><w:pPr><w:jc w:val="center"/><w:rPr><w:rFonts w:eastAsia="{fn}"/><w:sz w:val="{sz}"/><w:b/></w:rPr></w:pPr>'
+            tbl_xml += f'<w:r><w:rPr><w:rFonts w:eastAsia="{fn}"/><w:sz w:val="{sz}"/><w:b/></w:rPr><w:t>{h_escaped}</w:t></w:r>'
             tbl_xml += f'</w:p></w:tc>'
         tbl_xml += '</w:tr>'
 
@@ -416,8 +453,8 @@ def _create_table_element(table_data: dict, font_name: str, font_size_pt: float)
         tbl_xml += '<w:tr>'
         for cell in row:
             cell_escaped = str(cell).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-            tbl_xml += f'<w:tc><w:p><w:pPr><w:jc w:val="center"/><w:rPr><w:rFonts w:eastAsia="{font_name}"/><w:sz w:val="{sz}"/></w:rPr></w:pPr>'
-            tbl_xml += f'<w:r><w:rPr><w:rFonts w:eastAsia="{font_name}"/><w:sz w:val="{sz}"/></w:rPr><w:t>{cell_escaped}</w:t></w:r>'
+            tbl_xml += f'<w:tc><w:p><w:pPr><w:jc w:val="center"/><w:rPr><w:rFonts w:eastAsia="{fn}"/><w:sz w:val="{sz}"/></w:rPr></w:pPr>'
+            tbl_xml += f'<w:r><w:rPr><w:rFonts w:eastAsia="{fn}"/><w:sz w:val="{sz}"/></w:rPr><w:t>{cell_escaped}</w:t></w:r>'
             tbl_xml += f'</w:p></w:tc>'
         tbl_xml += '</w:tr>'
 

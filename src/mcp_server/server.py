@@ -36,57 +36,45 @@ AGENT_FRAMEWORKS = [
     (".cline", "skills"),
 ]
 
-SEARCH_ROOTS = [PROJECT_ROOT, os.path.expanduser("~")]
-
 KEY_ERROR_GENERAL = "❌ 凭据无效。请完整阅读report-skill-generator Skill文件，找到文件中的凭据（分为两部分，需拼接），然后传入skill_key参数。不阅读Skill文件将无法使用任何工具。"
 KEY_ERROR_SPECIALIZED = "❌ 凭据无效。请完整阅读特化Skill文件，找到文件中的凭据（分为两部分，需拼接），然后传入skill_key参数。不阅读Skill文件将无法使用任何工具。"
+
+
+def _iter_skill_files():
+    for agent_dir, skills_subdir in AGENT_FRAMEWORKS:
+        skills_base = os.path.join(PROJECT_ROOT, agent_dir, skills_subdir)
+        if not os.path.exists(skills_base):
+            continue
+        for skill_dir_name in os.listdir(skills_base):
+            skill_file = os.path.join(skills_base, skill_dir_name, "SKILL.md")
+            if os.path.exists(skill_file):
+                yield skill_file
 
 
 def _check_general_key(skill_key: str) -> bool:
     return skill_key.strip().upper() == GENERAL_KEY
 
 
-def _find_skill_file_with_key(skill_key: str) -> bool:
-    key_upper = skill_key.strip().upper()
-    for root in SEARCH_ROOTS:
-        for agent_dir, skills_subdir in AGENT_FRAMEWORKS:
-            skills_base = os.path.join(root, agent_dir, skills_subdir)
-            if not os.path.exists(skills_base):
-                continue
-            for skill_dir_name in os.listdir(skills_base):
-                skill_file = os.path.join(skills_base, skill_dir_name, "SKILL.md")
-                if os.path.exists(skill_file):
-                    try:
-                        with open(skill_file, 'r', encoding='utf-8') as sf:
-                            if key_upper in sf.read().upper():
-                                return True
-                    except Exception:
-                        pass
-    return False
-
-
-def _find_skill_in_category(category_dir: str, skill_key: str) -> bool:
-    if not os.path.isdir(category_dir):
-        return False
-    key_upper = skill_key.strip().upper()
-    for f_name in os.listdir(category_dir):
-        if f_name.endswith(".md") and f_name != "README.md":
-            try:
-                with open(os.path.join(category_dir, f_name), 'r', encoding='utf-8') as sf:
-                    if key_upper in sf.read().upper():
-                        return True
-            except Exception:
-                pass
-    return False
-
-
 def _check_specialized_key(skill_key: str, category_dir: str = "") -> bool:
+    key_upper = skill_key.strip().upper()
     if _check_general_key(skill_key):
-        return True
-    if category_dir and _find_skill_in_category(category_dir, skill_key):
-        return True
-    if _find_skill_file_with_key(skill_key):
-        return True
+        return False
+    if category_dir and os.path.isdir(category_dir):
+        for f_name in os.listdir(category_dir):
+            if f_name.endswith(".md") and f_name != "README.md":
+                try:
+                    with open(os.path.join(category_dir, f_name), 'r', encoding='utf-8') as sf:
+                        if key_upper in sf.read().upper():
+                            return True
+                except Exception:
+                    pass
+    for skill_file in _iter_skill_files():
+        try:
+            with open(skill_file, 'r', encoding='utf-8') as sf:
+                if key_upper in sf.read().upper():
+                    return True
+        except Exception:
+            pass
     return False
 
 
@@ -100,20 +88,13 @@ def _has_skill_in_category(category_dir: str) -> bool:
 
 
 def _has_skill_registered(template_path_val: str) -> bool:
-    for root in SEARCH_ROOTS:
-        for agent_dir, skills_subdir in AGENT_FRAMEWORKS:
-            skills_base = os.path.join(root, agent_dir, skills_subdir)
-            if not os.path.exists(skills_base):
-                continue
-            for skill_dir_name in os.listdir(skills_base):
-                skill_file = os.path.join(skills_base, skill_dir_name, "SKILL.md")
-                if os.path.exists(skill_file):
-                    try:
-                        with open(skill_file, 'r', encoding='utf-8') as sf:
-                            if template_path_val and template_path_val in sf.read():
-                                return True
-                    except Exception:
-                        pass
+    for skill_file in _iter_skill_files():
+        try:
+            with open(skill_file, 'r', encoding='utf-8') as sf:
+                if template_path_val and template_path_val in sf.read():
+                    return True
+        except Exception:
+            pass
     return False
 
 
@@ -267,15 +248,14 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             )
 
             registered = []
-            for root in SEARCH_ROOTS:
-                for agent_dir, skills_subdir in AGENT_FRAMEWORKS:
-                    agent_root = os.path.join(root, agent_dir)
-                    if os.path.exists(agent_root):
-                        target_dir = os.path.join(agent_root, skills_subdir, skill_name)
-                        os.makedirs(target_dir, exist_ok=True)
-                        target_path = os.path.join(target_dir, "SKILL.md")
-                        shutil.copy2(output, target_path)
-                        registered.append(target_path)
+            for agent_dir, skills_subdir in AGENT_FRAMEWORKS:
+                agent_root = os.path.join(PROJECT_ROOT, agent_dir)
+                if os.path.exists(agent_root):
+                    target_dir = os.path.join(agent_root, skills_subdir, skill_name)
+                    os.makedirs(target_dir, exist_ok=True)
+                    target_path = os.path.join(target_dir, "SKILL.md")
+                    shutil.copy2(output, target_path)
+                    registered.append(target_path)
 
             result = f"✅ 特化Skill已生成: {output}\n"
 
