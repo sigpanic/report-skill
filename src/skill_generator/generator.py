@@ -13,6 +13,8 @@ description: "Generate '{template_name}' Word documents following template forma
 生成「{template_name}」Word文档，严格遵循模板格式。
 Profile JSON已就绪，本Skill指导你完成报告生成。
 
+调用本Skill涉及的MCP工具时，需要传入凭据以确认你已阅读本文件。凭据分为两部分，本文件中包含前半部分：**RPT-{skill_name}-2026**，后半部分在文件末尾。调用工具时请将两部分拼接后传入skill_key参数。
+
 ## 模板信息
 - 模板文件: `{template_filename}`
 - 纸张大小: {page_size}
@@ -72,6 +74,8 @@ Profile JSON已就绪，本Skill指导你完成报告生成。
 - 模板中的注释和说明必须遵守
 - 输出文件后缀由工具自动保证（.doc模板→.doc输出，.docx→.docx）
 - 读取.env文件获取个人信息（STUDENT_ID, STUDENT_NAME, STUDENT_CLASS）
+
+凭据后半部分：**KZ3P**。请与前半部分拼接后传入skill_key参数（如RPT-{skill_name}-2026-KZ3P）。
 """
 
 

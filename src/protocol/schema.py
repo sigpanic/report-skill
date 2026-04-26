@@ -1,6 +1,6 @@
 ANALYZE_TEMPLATE_SCHEMA = {
     "name": "analyze_template",
-    "description": "分析Word模板文档，提取紧凑格式的原始数据(compact)和TypeScript接口定义。返回的compact数据是原始解析结果，不是TemplateProfile JSON。你必须根据compact数据和TS接口定义，自己编写TemplateProfile JSON，然后调用save_profile保存。",
+    "description": "分析Word模板文档，提取紧凑格式的原始数据(compact)和TypeScript接口定义。返回的compact数据是原始解析结果，不是TemplateProfile JSON。你必须根据compact数据和TS接口定义，自己编写TemplateProfile JSON，然后调用save_profile保存。需要传入skill_key凭据（从通用Skill文件中获取）。",
     "inputSchema": {
         "type": "object",
         "properties": {
@@ -11,9 +11,13 @@ ANALYZE_TEMPLATE_SCHEMA = {
             "output_path": {
                 "type": "string",
                 "description": "compact原始数据JSON保存路径（可选，不提供则不保存）"
+            },
+            "skill_key": {
+                "type": "string",
+                "description": "凭据（从Skill文件中获取，证明你已阅读Skill）"
             }
         },
-        "required": ["template_path"]
+        "required": ["template_path", "skill_key"]
     }
 }
 
@@ -90,9 +94,13 @@ GENERATE_REPORT_SCHEMA = {
                 "type": "array",
                 "items": {"type": "string"},
                 "description": "全局结果图片路径列表（可选）"
+            },
+            "skill_key": {
+                "type": "string",
+                "description": "凭据（从特化Skill文件中获取，证明你已阅读Skill）"
             }
         },
-        "required": ["template_path", "output_path", "profile_path", "field_values", "sections"]
+        "required": ["template_path", "output_path", "profile_path", "field_values", "sections", "skill_key"]
     }
 }
 
@@ -123,15 +131,19 @@ GENERATE_SKILL_SCHEMA = {
                         {"type": "object", "additionalProperties": {"type": "string"}}
                     ]
                 }
+            },
+            "skill_key": {
+                "type": "string",
+                "description": "凭据（从通用Skill文件中获取，证明你已阅读Skill）"
             }
         },
-        "required": ["profile_path", "skill_name", "output_path"]
+        "required": ["profile_path", "skill_name", "output_path", "skill_key"]
     }
 }
 
 PARSE_COURSE_SCHEMA = {
     "name": "parse_course_material",
-    "description": "解析课件文件（支持pptx、docx、doc格式），提取文本内容。⚠️ 本工具仅在报告生成阶段使用，特化阶段不要调用。必须先读取特化Skill文件了解工作流程后再使用。",
+    "description": "解析课件文件（支持pptx、docx、doc格式），提取文本内容。⚠️ 本工具仅在报告生成阶段使用，特化阶段不要调用。需要传入skill_key凭据（从特化Skill文件中获取）。",
     "inputSchema": {
         "type": "object",
         "properties": {
@@ -142,15 +154,19 @@ PARSE_COURSE_SCHEMA = {
             "output_path": {
                 "type": "string",
                 "description": "解析结果JSON保存路径（可选）"
+            },
+            "skill_key": {
+                "type": "string",
+                "description": "凭据（从特化Skill文件中获取，证明你已阅读Skill）"
             }
         },
-        "required": ["file_path"]
+        "required": ["file_path", "skill_key"]
     }
 }
 
 VERIFY_FORMAT_SCHEMA = {
     "name": "verify_format",
-    "description": "对比生成的Word文档与模板的格式差异，验证格式是否一致。检查页面设置、段落样式、字体、字号、加粗、斜体、下划线等。",
+    "description": "对比生成的Word文档与模板的格式差异，验证格式是否一致。检查页面设置、段落样式、字体、字号、加粗、斜体、下划线等。需要传入skill_key凭据（从特化Skill文件中获取）。",
     "inputSchema": {
         "type": "object",
         "properties": {
@@ -165,15 +181,19 @@ VERIFY_FORMAT_SCHEMA = {
             "output_path": {
                 "type": "string",
                 "description": "验证结果JSON保存路径（可选）"
+            },
+            "skill_key": {
+                "type": "string",
+                "description": "凭据（从特化Skill文件中获取，证明你已阅读Skill）"
             }
         },
-        "required": ["template_path", "generated_path"]
+        "required": ["template_path", "generated_path", "skill_key"]
     }
 }
 
 SAVE_PROFILE_SCHEMA = {
     "name": "save_profile",
-    "description": "保存TemplateProfile JSON到文件，并自动验证格式。你必须根据analyze_template返回的TypeScript接口定义编写TemplateProfile JSON，然后调用此工具保存。系统会自动验证格式并补全缺失字段。如果验证失败，会返回具体错误信息和TS接口定义供修正。⚠️ annotation_patterns和removal_patterns不能为空，必须识别模板中的注释/提示文本模式。",
+    "description": "保存TemplateProfile JSON到文件，并自动验证格式。你必须根据analyze_template返回的TypeScript接口定义编写TemplateProfile JSON，然后调用此工具保存。系统会自动验证格式并补全缺失字段。如果验证失败，会返回具体错误信息和TS接口定义供修正。⚠️ annotation_patterns和removal_patterns不能为空，必须识别模板中的注释/提示文本模式。需要传入skill_key凭据（从通用Skill文件中获取）。",
     "inputSchema": {
         "type": "object",
         "properties": {
@@ -184,9 +204,13 @@ SAVE_PROFILE_SCHEMA = {
             "output_path": {
                 "type": "string",
                 "description": "Profile JSON保存路径"
+            },
+            "skill_key": {
+                "type": "string",
+                "description": "凭据（从通用Skill文件中获取，证明你已阅读Skill）"
             }
         },
-        "required": ["profile_json", "output_path"]
+        "required": ["profile_json", "output_path", "skill_key"]
     }
 }
 

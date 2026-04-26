@@ -23,6 +23,25 @@ from src.protocol.ts_generator import generate_all_ts_interfaces
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+GENERAL_KEY = "RPT-GEN-2026-QX7M"
+SPECIALIZED_KEY_SUFFIX = "-2026-KZ3P"
+
+
+def _validate_general_key(skill_key: str) -> bool:
+    return skill_key.strip().upper() == GENERAL_KEY
+
+
+def _validate_specialized_key(skill_key: str, skill_name: str) -> bool:
+    expected = f"RPT-{skill_name}{SPECIALIZED_KEY_SUFFIX}"
+    return skill_key.strip().upper() == expected.upper()
+
+
+def _key_error_message(key_type: str) -> str:
+    if key_type == "general":
+        return "❌ 凭据无效。请完整阅读report-skill-generator Skill文件，找到文件中的凭据（分为两部分，需拼接），然后传入skill_key参数。不阅读Skill文件将无法使用任何工具。"
+    else:
+        return "❌ 凭据无效。请完整阅读特化Skill文件，找到文件中的凭据（分为两部分，需拼接），然后传入skill_key参数。不阅读Skill文件将无法使用任何工具。"
+
 
 def _get_default_output_dir(template_path: str) -> str:
     base_name = os.path.splitext(os.path.basename(template_path))[0]
@@ -57,6 +76,10 @@ async def list_tools() -> list[Tool]:
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     if name == "analyze_template":
         try:
+            skill_key = arguments.get("skill_key", "")
+            if not _validate_general_key(skill_key):
+                return [TextContent(type="text", text=_key_error_message("general"))]
+
             compact = analyze_template_compact(arguments["template_path"])
 
             output_path = arguments.get("output_path")
@@ -78,12 +101,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 - compact原始数据: {output_path}
 - 分析指导(含TS接口定义): {guide_path}
 
-## ⚠️ 重要提示
-1. 请读取上述两个文件获取完整数据
+## ⚠️ 强制要求
+1. **你必须读取上述两个文件的完整内容**，不能跳过或只读部分
 2. compact数据是原始解析结果，不是TemplateProfile JSON
 3. 你必须根据compact数据和TS接口定义，自己编写TemplateProfile JSON
 4. 编写完成后调用save_profile保存（自动Pydantic校验+代码辅助检查+补全fields）
-5. 如果save_profile返回警告，请检查是否需要修正"""
+5. 如果save_profile返回警告，请检查是否需要修正
+6. **不读取完整文件将导致Profile编写错误，Pydantic校验会拒绝执行**"""
 
             return [TextContent(type="text", text=result_text)]
         except Exception as e:
@@ -91,16 +115,98 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     elif name == "generate_report":
         try:
+            skill_key = arguments.get("skill_key", "").strip().upper()
             profile_path = arguments["profile_path"]
+
+            if not os.path.exists(profile_path):
+                return [TextContent(type="text", text=f"❌ Profile文件不存在: {profile_path}\n请先完成模板分析（analyze_template）和Profile保存（save_profile）。")]
+
             with open(profile_path, 'r', encoding='utf-8') as f:
                 profile = json.load(f)
+
+            key_valid = False
+            if skill_key == GENERAL_KEY:
+                key_valid = True
+            else:
+                profile_dir = os.path.dirname(os.path.abspath(profile_path))
+                category_dir = os.path.dirname(profile_dir) if os.path.basename(profile_dir) == "parsed" else profile_dir
+                if os.path.isdir(category_dir):
+                    for f_name in os.listdir(category_dir):
+                        if f_name.endswith(".md") and f_name != "README.md":
+                            skill_file = os.path.join(category_dir, f_name)
+                            try:
+                                with open(skill_file, 'r', encoding='utf-8') as sf:
+                                    content = sf.read()
+                                if skill_key in content.upper():
+                                    key_valid = True
+                                    break
+                            except Exception:
+                                pass
+
+                if not key_valid:
+                    for root in [PROJECT_ROOT, os.path.expanduser("~")]:
+                        for agent_dir in [".trae", ".claude"]:
+                            skills_base = os.path.join(root, agent_dir, "skills")
+                            if os.path.exists(skills_base):
+                                for skill_dir_name in os.listdir(skills_base):
+                                    skill_file = os.path.join(skills_base, skill_dir_name, "SKILL.md")
+                                    if os.path.exists(skill_file):
+                                        try:
+                                            with open(skill_file, 'r', encoding='utf-8') as sf:
+                                                content = sf.read()
+                                            if skill_key in content.upper():
+                                                key_valid = True
+                                                break
+                                        except Exception:
+                                            pass
+                                if key_valid:
+                                    break
+                        if key_valid:
+                            break
+
+            if not key_valid:
+                return [TextContent(type="text", text=_key_error_message("specialized"))]
 
             validation = validate_profile_pydantic(profile)
             if not validation["valid"]:
                 errors_str = "\n".join(f"  - {e}" for e in validation["errors"])
-                return [TextContent(type="text", text=f"Profile格式验证失败，请修正以下错误后再试：\n{errors_str}")]
+                return [TextContent(type="text", text=f"❌ Profile格式验证失败，请修正以下错误后再试：\n{errors_str}")]
 
             profile = fix_profile_pydantic(profile)
+
+            profile_dir = os.path.dirname(os.path.abspath(profile_path))
+            category_dir = os.path.dirname(profile_dir) if os.path.basename(profile_dir) == "parsed" else profile_dir
+
+            skill_found = False
+            for f in os.listdir(category_dir) if os.path.isdir(category_dir) else []:
+                if f.endswith(".md") and f != "README.md":
+                    skill_found = True
+                    break
+
+            if not skill_found:
+                for root in [PROJECT_ROOT, os.path.expanduser("~")]:
+                    for agent_dir in [".trae", ".claude"]:
+                        skills_base = os.path.join(root, agent_dir, "skills")
+                        if os.path.exists(skills_base):
+                            for skill_dir in os.listdir(skills_base):
+                                skill_file = os.path.join(skills_base, skill_dir, "SKILL.md")
+                                if os.path.exists(skill_file):
+                                    try:
+                                        with open(skill_file, 'r', encoding='utf-8') as sf:
+                                            content = sf.read()
+                                        template_path_val = profile.get("template_path", "")
+                                        if template_path_val and template_path_val in content:
+                                            skill_found = True
+                                            break
+                                    except Exception:
+                                        pass
+                        if skill_found:
+                            break
+                    if skill_found:
+                        break
+
+            if not skill_found:
+                return [TextContent(type="text", text=f"❌ 未找到对应的特化Skill。请先完成特化（调用generate_skill生成特化Skill），然后按Skill规定的工作流程生成报告。\n不要跳过Skill直接调用本工具。")]
 
             output = generate_report(
                 template_path=arguments["template_path"],
@@ -117,6 +223,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     elif name == "generate_skill":
         try:
             import shutil as shutil_mod
+
+            skill_key = arguments.get("skill_key", "")
+            if not _validate_general_key(skill_key):
+                return [TextContent(type="text", text=_key_error_message("general"))]
 
             profile_path = arguments["profile_path"]
             with open(profile_path, 'r', encoding='utf-8') as f:
@@ -156,7 +266,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                         shutil_mod.copy2(output, target_path)
                         registered.append(target_path)
 
-            result = f"Skill已生成: {output}\n"
+            result = f"✅ 特化Skill已生成: {output}\n"
 
             if registered:
                 result += "\nSkill已自动注册到以下Agent目录：\n"
@@ -164,7 +274,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     result += f"  - {path}\n"
             else:
                 result += "\n⚠️ 未检测到任何Agent框架目录（.trae/、.claude/等）。"
-                result += "Skill仅保存在类别目录下，请通知用户手动注册，或确保至少安装了一个支持Skill的Agent框架。\n"
+                result += "Skill仅保存在类别目录下，请通知用户手动注册。\n"
+
+            with open(output, 'r', encoding='utf-8') as sf:
+                skill_content = sf.read()
+
+            result += f"\n---\n## 特化Skill内容（请按此工作流程执行报告生成）\n\n{skill_content}\n\n---\n"
+            result += "⚠️ 以上是特化Skill的完整内容。如果用户要求生成报告，请严格按照上述工作流程执行，不要跳过任何步骤。"
 
             return [TextContent(type="text", text=result)]
         except Exception as e:
@@ -172,6 +288,31 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     elif name == "parse_course_material":
         try:
+            skill_key = arguments.get("skill_key", "").strip().upper()
+            if skill_key != GENERAL_KEY:
+                key_found = False
+                for root in [PROJECT_ROOT, os.path.expanduser("~")]:
+                    for agent_dir in [".trae", ".claude"]:
+                        skills_base = os.path.join(root, agent_dir, "skills")
+                        if os.path.exists(skills_base):
+                            for skill_dir_name in os.listdir(skills_base):
+                                skill_file = os.path.join(skills_base, skill_dir_name, "SKILL.md")
+                                if os.path.exists(skill_file):
+                                    try:
+                                        with open(skill_file, 'r', encoding='utf-8') as sf:
+                                            content = sf.read()
+                                        if skill_key in content.upper():
+                                            key_found = True
+                                            break
+                                    except Exception:
+                                        pass
+                            if key_found:
+                                break
+                    if key_found:
+                        break
+                if not key_found:
+                    return [TextContent(type="text", text=_key_error_message("specialized"))]
+
             result = parse_course_material(arguments["file_path"])
             if "error" in result and result.get("error"):
                 return [TextContent(type="text", text=f"解析失败: {result['error']}")]
@@ -195,7 +336,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 summary += f"包含图片: 是\n"
             if result.get("image_note"):
                 summary += f"\n⚠️ {result['image_note']}\n"
-            summary += f"\n请读取文件获取完整内容: {output_path}"
+            summary += f"\n⚠️ **你必须读取文件获取完整内容**: {output_path}"
 
             return [TextContent(type="text", text=summary)]
         except Exception as e:
@@ -203,6 +344,31 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     elif name == "verify_format":
         try:
+            skill_key = arguments.get("skill_key", "").strip().upper()
+            if skill_key != GENERAL_KEY:
+                key_found = False
+                for root in [PROJECT_ROOT, os.path.expanduser("~")]:
+                    for agent_dir in [".trae", ".claude"]:
+                        skills_base = os.path.join(root, agent_dir, "skills")
+                        if os.path.exists(skills_base):
+                            for skill_dir_name in os.listdir(skills_base):
+                                skill_file = os.path.join(skills_base, skill_dir_name, "SKILL.md")
+                                if os.path.exists(skill_file):
+                                    try:
+                                        with open(skill_file, 'r', encoding='utf-8') as sf:
+                                            content = sf.read()
+                                        if skill_key in content.upper():
+                                            key_found = True
+                                            break
+                                    except Exception:
+                                        pass
+                            if key_found:
+                                break
+                    if key_found:
+                        break
+                if not key_found:
+                    return [TextContent(type="text", text=_key_error_message("specialized"))]
+
             result = verify_format(
                 template_path=arguments["template_path"],
                 generated_path=arguments["generated_path"],
@@ -219,8 +385,16 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     elif name == "save_profile":
         try:
+            skill_key = arguments.get("skill_key", "")
+            if not _validate_general_key(skill_key):
+                return [TextContent(type="text", text=_key_error_message("general"))]
+
             profile_data = arguments["profile_json"]
             output_path = arguments["output_path"]
+
+            template_path_val = profile_data.get("template_path", "")
+            if template_path_val and not os.path.exists(template_path_val):
+                return [TextContent(type="text", text=f"❌ 模板文件不存在: {template_path_val}\n请先调用analyze_template分析模板，然后根据分析结果编写Profile。")]
 
             validation = validate_profile_pydantic(profile_data)
             if not validation["valid"]:

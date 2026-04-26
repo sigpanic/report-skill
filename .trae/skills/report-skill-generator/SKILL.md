@@ -37,6 +37,8 @@ description: "Analyzes Word templates and generates specialized report skills. I
 
 ## 目录结构
 
+调用本Skill涉及的MCP工具时，需要传入凭据以确认你已阅读本文件。凭据分为两部分，本文件中包含前半部分：**RPT-GEN-2026**，后半部分在文件末尾。调用工具时请将两部分拼接后传入skill_key参数。
+
 特化时，在项目根目录创建以下目录结构：
 
 ```
@@ -121,6 +123,8 @@ Parser(确定性解析) → compact数据 + TS接口定义 → LLM(语义理解)
 ```
 
 特化Skill生成后，其他Agent可以直接使用它生成报告，无需重新分析模板。
+
+凭据后半部分：**QX7M**。请与前半部分拼接后传入skill_key参数（如RPT-GEN-2026-QX7M）。
 
 ## 约束
 
