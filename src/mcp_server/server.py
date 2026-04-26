@@ -2,7 +2,6 @@ import asyncio
 import json
 import os
 import re
-import shutil
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -15,7 +14,8 @@ from src.protocol.schema import (
     ANALYZE_TEMPLATE_SCHEMA, GENERATE_REPORT_SCHEMA, GENERATE_SKILL_SCHEMA,
     PARSE_COURSE_SCHEMA, VERIFY_FORMAT_SCHEMA, SAVE_PROFILE_SCHEMA
 )
-from src.template_parser.analyzer import analyze_template_compact, save_profile, save_compact, get_analysis_guide, check_profile_completeness
+from src.protocol.constants import GENERAL_KEY, AGENT_FRAMEWORKS, KEY_ERROR_GENERAL, KEY_ERROR_SPECIALIZED
+from src.template_parser.analyzer import analyze_template_compact, save_compact, get_analysis_guide, check_profile_completeness
 from src.template_parser.course_parser import parse_course_material
 from src.doc_generator.generator import generate_report
 from src.doc_generator.verifier import verify_format
@@ -25,39 +25,51 @@ from src.protocol.ts_generator import generate_all_ts_interfaces
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-GENERAL_KEY = "RPT-GEN-2026-QX7M"
 
-AGENT_FRAMEWORKS = [
-    (".trae", "skills"),
-    (".claude", "skills"),
-    (".cursor", "skills"),
-    (".aider", "skills"),
-    (".windsurf", "skills"),
-    (".cline", "skills"),
-]
+def _wrap_skill_for_framework(content: str, skill_name: str, frontmatter_type: str) -> str:
+    body = content
+    if body.startswith("---"):
+        end = body.find("---", 3)
+        if end != -1:
+            body = body[end + 3:].lstrip("\n")
 
-KEY_ERROR_GENERAL = "❌ 凭据无效。请完整阅读report-skill-generator Skill文件，找到文件中的凭据（分为两部分，需拼接），然后传入skill_key参数。不阅读Skill文件将无法使用任何工具。"
-KEY_ERROR_SPECIALIZED = "❌ 凭据无效。请完整阅读特化Skill文件，找到文件中的凭据（分为两部分，需拼接），然后传入skill_key参数。不阅读Skill文件将无法使用任何工具。"
+    if frontmatter_type == "trae":
+        return f"---\nname: \"{skill_name}\"\ndescription: \"Generate '{skill_name}' Word documents following template format strictly.\"\n---\n\n{body}"
+    elif frontmatter_type == "claude":
+        return f"---\ndescription: \"Generate '{skill_name}' Word documents following template format strictly.\"\nallowed-tools: [\"Read\", \"Write\", \"Bash\"]\n---\n\n{body}"
+    elif frontmatter_type == "cursor":
+        return f"---\ndescription: \"Generate '{skill_name}' Word documents following template format strictly.\"\nglobs: []\nalwaysApply: false\n---\n\n{body}"
+    else:
+        return body
 
 
 def _iter_skill_files():
-    for agent_dir, skills_subdir in AGENT_FRAMEWORKS:
+    for fw in AGENT_FRAMEWORKS:
+        agent_dir = fw["dir"]
+        skills_subdir = fw["subdir"]
+        if fw.get("single_file"):
+            single_file = os.path.join(PROJECT_ROOT, agent_dir, fw["filename"])
+            if os.path.exists(single_file):
+                yield single_file
+            continue
         skills_base = os.path.join(PROJECT_ROOT, agent_dir, skills_subdir)
         if not os.path.exists(skills_base):
             continue
-        for skill_dir_name in os.listdir(skills_base):
-            skill_file = os.path.join(skills_base, skill_dir_name, "SKILL.md")
-            if os.path.exists(skill_file):
-                yield skill_file
-
-
-def _check_general_key(skill_key: str) -> bool:
-    return skill_key.strip().upper() == GENERAL_KEY
+        if fw.get("nested"):
+            for skill_dir_name in os.listdir(skills_base):
+                skill_file = os.path.join(skills_base, skill_dir_name, fw["filename"])
+                if os.path.exists(skill_file):
+                    yield skill_file
+        else:
+            ext = fw.get("ext", ".md")
+            for f_name in os.listdir(skills_base):
+                if f_name.endswith(ext):
+                    yield os.path.join(skills_base, f_name)
 
 
 def _check_specialized_key(skill_key: str, category_dir: str = "") -> bool:
     key_upper = skill_key.strip().upper()
-    if _check_general_key(skill_key):
+    if key_upper == GENERAL_KEY:
         return False
     if category_dir and os.path.isdir(category_dir):
         for f_name in os.listdir(category_dir):
@@ -135,7 +147,7 @@ async def list_tools() -> list[Tool]:
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     if name == "analyze_template":
         try:
-            if not _check_general_key(arguments.get("skill_key", "")):
+            if arguments.get("skill_key", "").strip().upper() != GENERAL_KEY:
                 return [TextContent(type="text", text=KEY_ERROR_GENERAL)]
 
             compact = analyze_template_compact(arguments["template_path"])
@@ -221,7 +233,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     elif name == "generate_skill":
         try:
-            if not _check_general_key(arguments.get("skill_key", "")):
+            if arguments.get("skill_key", "").strip().upper() != GENERAL_KEY:
                 return [TextContent(type="text", text=KEY_ERROR_GENERAL)]
 
             profile_path = arguments["profile_path"]
@@ -247,14 +259,39 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 constraints=arguments.get("constraints")
             )
 
+            with open(output, 'r', encoding='utf-8') as sf:
+                skill_content = sf.read()
+
             registered = []
-            for agent_dir, skills_subdir in AGENT_FRAMEWORKS:
+            for fw in AGENT_FRAMEWORKS:
+                agent_dir = fw["dir"]
                 agent_root = os.path.join(PROJECT_ROOT, agent_dir)
-                if os.path.exists(agent_root):
-                    target_dir = os.path.join(agent_root, skills_subdir, skill_name)
+                if not os.path.exists(agent_root):
+                    continue
+
+                fw_type = fw.get("frontmatter_type", "plain")
+                fw_content = _wrap_skill_for_framework(skill_content, skill_name, fw_type)
+
+                if fw.get("single_file"):
+                    target_path = os.path.join(agent_root, fw["filename"])
+                    os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                    with open(target_path, 'w', encoding='utf-8') as f:
+                        f.write(fw_content)
+                    registered.append(target_path)
+                elif fw.get("nested"):
+                    target_dir = os.path.join(agent_root, fw["subdir"], skill_name)
                     os.makedirs(target_dir, exist_ok=True)
-                    target_path = os.path.join(target_dir, "SKILL.md")
-                    shutil.copy2(output, target_path)
+                    target_path = os.path.join(target_dir, fw["filename"])
+                    with open(target_path, 'w', encoding='utf-8') as f:
+                        f.write(fw_content)
+                    registered.append(target_path)
+                else:
+                    target_dir = os.path.join(agent_root, fw["subdir"])
+                    os.makedirs(target_dir, exist_ok=True)
+                    target_filename = f"{skill_name}{fw['ext']}"
+                    target_path = os.path.join(target_dir, target_filename)
+                    with open(target_path, 'w', encoding='utf-8') as f:
+                        f.write(fw_content)
                     registered.append(target_path)
 
             result = f"✅ 特化Skill已生成: {output}\n"
@@ -265,9 +302,6 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     result += f"  - {path}\n"
             else:
                 result += "\n⚠️ 未检测到任何Agent框架目录。Skill仅保存在类别目录下，请通知用户手动注册。\n"
-
-            with open(output, 'r', encoding='utf-8') as sf:
-                skill_content = sf.read()
 
             result += f"\n---\n## 特化Skill内容（请按此工作流程执行报告生成）\n\n{skill_content}\n\n---\n"
             result += "⚠️ 以上是特化Skill的完整内容。如果用户要求生成报告，请严格按照上述工作流程执行，不要跳过任何步骤。"
@@ -319,23 +353,38 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             if not _check_specialized_key(skill_key):
                 return [TextContent(type="text", text=KEY_ERROR_SPECIALIZED)]
 
+            profile = None
+            profile_path = arguments.get("profile_path")
+            if profile_path and os.path.exists(profile_path):
+                with open(profile_path, 'r', encoding='utf-8') as f:
+                    profile = json.load(f)
+
             result = verify_format(
                 template_path=arguments["template_path"],
                 generated_path=arguments["generated_path"],
-                output_path=arguments.get("output_path")
+                output_path=arguments.get("output_path"),
+                profile=profile
             )
 
             if result["passed"]:
-                return [TextContent(type="text", text=f"格式验证通过! 所有格式与模板一致。")]
+                msg = "格式验证通过! 所有格式与模板一致。"
             else:
                 issues = "\n".join(f"- {issue}" for issue in result["issues"])
-                return [TextContent(type="text", text=f"格式验证未通过，以下格式不一致:\n{issues}")]
+                msg = f"格式验证未通过，以下格式不一致:\n{issues}"
+
+            req_warnings = result.get("requirement_warnings", [])
+            if req_warnings:
+                msg += "\n\n📋 Requirements代码辅助检查（仅供参考，由你决定是否修正）：\n"
+                for w in req_warnings:
+                    msg += f"  {w}\n"
+
+            return [TextContent(type="text", text=msg)]
         except Exception as e:
             return [TextContent(type="text", text=f"验证失败: {str(e)}")]
 
     elif name == "save_profile":
         try:
-            if not _check_general_key(arguments.get("skill_key", "")):
+            if arguments.get("skill_key", "").strip().upper() != GENERAL_KEY:
                 return [TextContent(type="text", text=KEY_ERROR_GENERAL)]
 
             profile_data = arguments["profile_json"]

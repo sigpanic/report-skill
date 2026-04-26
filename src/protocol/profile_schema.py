@@ -74,10 +74,30 @@ class SectionStyle(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class ContentStyle(BaseModel):
+    font_name: str = ""
+    font_size_pt: float = 0
+    italic: bool = False
+    underline: bool = False
+    alignment: str = ""
+
+    model_config = {"extra": "forbid"}
+
+
+class SectionRequirement(BaseModel):
+    type: Literal["min_count", "font", "table_structure", "format", "content", "other"]
+    description: str
+    value: str = ""
+
+    model_config = {"extra": "forbid"}
+
+
 class SectionInfo(BaseModel):
     title: str
     style: SectionStyle
     note: str = ""
+    content_style: Optional[ContentStyle] = None
+    requirements: list[SectionRequirement] = Field(default_factory=list)
 
     model_config = {"extra": "forbid"}
 
@@ -155,33 +175,7 @@ def fix_profile_pydantic(data: dict) -> dict:
     if result["valid"]:
         profile = result["profile"]
     else:
-        try:
-            profile = TemplateProfile(
-                template_path=data.get("template_path", ""),
-                page_setup=data.get("page_setup", {}),
-                cover_page=data.get("cover_page", {}),
-                format_rules=data.get("format_rules", {}),
-            ).model_dump()
-        except Exception:
-            profile = TemplateProfile(
-                template_path="",
-                page_setup=PageSetup(
-                    page_width_cm=21.0, page_height_cm=29.7,
-                    left_margin_cm=2.54, right_margin_cm=2.54,
-                    top_margin_cm=2.54, bottom_margin_cm=2.54
-                ),
-                cover_page=CoverPage(),
-                format_rules=FormatRules(
-                    body_text=BodyTextStyle(font_name="宋体", font_size_pt=12),
-                    section_header=SectionHeaderStyle(font_name="黑体", font_size_pt=14, bold=True),
-                    line_spacing_pt=22, first_line_indent_chars=2,
-                    space_before=0, space_after=0
-                ),
-            ).model_dump()
-        for key in ["cover_page", "tables", "sections",
-                     "annotation_patterns", "removal_patterns"]:
-            if key in data:
-                profile[key] = data[key]
+        profile = data
 
     if not profile.get("fields"):
         all_fields = []

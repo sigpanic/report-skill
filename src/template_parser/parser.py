@@ -234,8 +234,3 @@ def _extract_format_rules(parsed: dict) -> dict:
             break
 
     return rules
-
-def save_parsed_template(parsed: dict, output_path: str):
-    """保存解析结果为JSON"""
-    with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(parsed, f, ensure_ascii=False, indent=2)

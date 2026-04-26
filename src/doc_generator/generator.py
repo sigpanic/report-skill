@@ -278,24 +278,37 @@ def _is_hint_run(run) -> bool:
 
 def _fill_sections(doc, profile: dict, sections: list, result_images: list = None):
     format_rules = profile.get("format_rules", {})
-    section_titles = {}
+    section_map = {}
     for sec in sections:
-        section_titles[sec["title"]] = sec
+        section_map[sec["title"]] = sec
 
     for para in doc.paragraphs:
         text = para.text.strip()
-        if text in section_titles:
-            sec = section_titles[text]
-            _insert_section_content(para, sec.get("content", ""), sec.get("images", []), sec.get("tables", []), format_rules)
+        if text in section_map:
+            sec = section_map[text]
+            sec_profile = _find_section_profile(profile, text)
+            content_style = sec_profile.get("content_style") if sec_profile else None
+            requirements = sec_profile.get("requirements", []) if sec_profile else []
+            _insert_section_content(
+                para, sec.get("content", ""), sec.get("images", []),
+                sec.get("tables", []), format_rules, content_style, requirements
+            )
 
     if result_images:
         last_section_para = None
         for para in doc.paragraphs:
             text = para.text.strip()
-            if text in section_titles:
+            if text in section_map:
                 last_section_para = para
         if last_section_para:
             _insert_result_images_after(last_section_para, result_images, format_rules)
+
+
+def _find_section_profile(profile: dict, title: str) -> dict:
+    for sec in profile.get("sections", []):
+        if sec.get("title") == title:
+            return sec
+    return {}
 
 
 def _insert_result_images_after(title_para, image_paths: list, format_rules: dict):
@@ -318,14 +331,18 @@ def _insert_result_images_after(title_para, image_paths: list, format_rules: dic
         img_run.add_picture(img_path, width=Cm(12))
 
 
-def _insert_section_content(title_para, content: str, images: list, content_tables: list, format_rules: dict):
+def _insert_section_content(title_para, content: str, images: list, content_tables: list,
+                            format_rules: dict, content_style: dict = None, requirements: list = None):
     body_style = format_rules.get("body_text", {})
-    font_name = body_style.get("font_name", "宋体")
-    font_size_pt = body_style.get("font_size_pt", 12)
+    font_name = content_style.get("font_name", "") if content_style and content_style.get("font_name") else body_style.get("font_name", "宋体")
+    font_size_pt = content_style.get("font_size_pt", 0) if content_style and content_style.get("font_size_pt") else body_style.get("font_size_pt", 12)
     line_spacing_pt = format_rules.get("line_spacing_pt", 22)
     indent_chars = format_rules.get("first_line_indent_chars", 2)
     indent_cm = indent_chars * 0.42
     font_name_safe = xml_escape(font_name, {'"': '&quot;'})
+    is_italic = content_style.get("italic", False) if content_style else False
+    is_underline = content_style.get("underline", False) if content_style else False
+    alignment = content_style.get("alignment", "") if content_style else ""
 
     insert_after = title_para._element
 
@@ -352,12 +369,20 @@ def _insert_section_content(title_para, content: str, images: list, content_tabl
                 if rPr is not None:
                     rPr.rFonts.set(qn('w:eastAsia'), font_name)
                 run.font.size = Pt(font_size_pt)
+                if is_italic:
+                    run.font.italic = True
+                if is_underline:
+                    run.font.underline = True
 
                 pf = new_p.paragraph_format
                 pf.first_line_indent = Cm(indent_cm)
                 pf.line_spacing = Pt(line_spacing_pt)
                 pf.space_before = Pt(0)
                 pf.space_after = Pt(0)
+                if alignment == "center":
+                    pf.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                elif alignment == "right":
+                    pf.alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
     if content_tables:
         for table_data in content_tables:

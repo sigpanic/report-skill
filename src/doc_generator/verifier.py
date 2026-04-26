@@ -9,7 +9,8 @@ from docx import Document
 from src.template_parser.parser import doc_to_docx
 
 
-def verify_format(template_path: str, generated_path: str, output_path: Optional[str] = None) -> dict:
+def verify_format(template_path: str, generated_path: str, output_path: Optional[str] = None,
+                   profile: Optional[dict] = None) -> dict:
     template_docx = _ensure_docx(template_path)
     generated_docx = _ensure_docx(generated_path)
 
@@ -22,11 +23,12 @@ def verify_format(template_path: str, generated_path: str, output_path: Optional
             "paragraphs": _verify_paragraphs(template_doc, generated_doc),
             "tables": _verify_tables(template_doc, generated_doc),
             "passed": True,
-            "issues": []
+            "issues": [],
+            "requirement_warnings": []
         }
 
         for category, checks in results.items():
-            if category in ["passed", "issues"]:
+            if category in ["passed", "issues", "requirement_warnings"]:
                 continue
             if isinstance(checks, dict):
                 for key, value in checks.items():
@@ -40,6 +42,10 @@ def verify_format(template_path: str, generated_path: str, output_path: Optional
                             if value is False and key != "text_match":
                                 results["passed"] = False
                                 results["issues"].append(f"{category}[{i}].{key}: 不一致")
+
+        if profile:
+            req_warnings = _check_requirements(generated_doc, profile)
+            results["requirement_warnings"] = req_warnings
 
         if output_path:
             with open(output_path, 'w', encoding='utf-8') as f:
@@ -57,6 +63,109 @@ def verify_format(template_path: str, generated_path: str, output_path: Optional
                 os.remove(generated_docx)
             except Exception:
                 pass
+
+
+def _check_requirements(generated_doc, profile: dict) -> list:
+    warnings = []
+    sections = profile.get("sections", [])
+
+    section_titles = []
+    for sec in sections:
+        section_titles.append(sec.get("title", ""))
+
+    para_section_map = _map_paras_to_sections(generated_doc, section_titles)
+
+    for sec in sections:
+        title = sec.get("title", "")
+        requirements = sec.get("requirements", [])
+        if not requirements:
+            continue
+
+        section_para_indices = para_section_map.get(title, [])
+
+        for req in requirements:
+            req_type = req.get("type", "")
+            desc = req.get("description", "")
+            value = req.get("value", "")
+
+            if req_type == "min_count" and value:
+                try:
+                    min_count = int(value)
+                    content_paras = [i for i in section_para_indices if i not in _get_title_indices(generated_doc, section_titles)]
+                    actual_count = 0
+                    for idx in content_paras:
+                        if idx < len(generated_doc.paragraphs):
+                            text = generated_doc.paragraphs[idx].text.strip()
+                            if text:
+                                actual_count += 1
+                    if actual_count < min_count:
+                        warnings.append(f"章节「{title}」: 约束「{desc}」可能未满足 — 检测到{actual_count}个非空段落，要求不少于{min_count}个")
+                except (ValueError, IndexError):
+                    pass
+
+            elif req_type == "font" and value:
+                font_found = False
+                for idx in section_para_indices:
+                    if idx < len(generated_doc.paragraphs):
+                        for run in generated_doc.paragraphs[idx].runs:
+                            if run.font.name and value.lower() in run.font.name.lower():
+                                font_found = True
+                                break
+                            try:
+                                rPr = run._element.rPr
+                                if rPr is not None:
+                                    east_asia = rPr.rFonts.get(
+                                        '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}eastAsia')
+                                    if east_asia and value.lower() in east_asia.lower():
+                                        font_found = True
+                                        break
+                            except Exception:
+                                pass
+                        if font_found:
+                            break
+                if not font_found:
+                    warnings.append(f"章节「{title}」: 约束「{desc}」可能未满足 — 未检测到字体「{value}」")
+
+            elif req_type == "table_structure":
+                has_table = False
+                for idx in section_para_indices:
+                    if idx < len(generated_doc.paragraphs):
+                        p_elem = generated_doc.paragraphs[idx]._element
+                        next_sib = p_elem.getnext()
+                        if next_sib is not None and next_sib.tag.endswith('}tbl'):
+                            has_table = True
+                            break
+                if not has_table:
+                    warnings.append(f"章节「{title}」: 约束「{desc}」可能未满足 — 未检测到表格")
+
+            elif req_type in ("content", "format", "other"):
+                warnings.append(f"章节「{title}」: 提醒约束「{desc}」— 请人工确认是否满足")
+
+    return warnings
+
+
+def _map_paras_to_sections(doc, section_titles: list) -> dict:
+    result = {t: [] for t in section_titles}
+    current_section = None
+
+    for i, para in enumerate(doc.paragraphs):
+        text = para.text.strip()
+        if text in section_titles:
+            current_section = text
+            result[current_section].append(i)
+            continue
+        if current_section:
+            result[current_section].append(i)
+
+    return result
+
+
+def _get_title_indices(doc, section_titles: list) -> list:
+    indices = []
+    for i, para in enumerate(doc.paragraphs):
+        if para.text.strip() in section_titles:
+            indices.append(i)
+    return indices
 
 
 def _ensure_docx(file_path: str) -> str:

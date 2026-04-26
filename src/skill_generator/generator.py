@@ -111,14 +111,14 @@ def generate_skill(
         skill_name=skill_name,
         template_name=_escape_format(template_name),
         template_filename=_escape_format(template_filename),
-        page_size=page_size,
-        margins=margins,
-        delete_rules=delete_rules,
-        fields_section=fields_section,
-        sections_section=sections_section,
-        format_section=format_section,
-        constraints_section=constraints_section,
-        workflow_section=workflow_section,
+        page_size=_escape_format(page_size),
+        margins=_escape_format(margins),
+        delete_rules=_escape_format(delete_rules),
+        fields_section=_escape_format(fields_section),
+        sections_section=_escape_format(sections_section),
+        format_section=_escape_format(format_section),
+        constraints_section=_escape_format(constraints_section),
+        workflow_section=_escape_format(workflow_section),
         key_suffix=key_suffix,
     )
 
@@ -216,12 +216,37 @@ def _generate_sections_description(profile: dict) -> str:
             style_parts.append("加粗")
         style_str = ", ".join(style_parts) if style_parts else "默认"
 
+        lines.append(f"- **{sec['title']}** (标题样式: {style_str})")
+
+        content_style = sec.get("content_style")
+        if content_style:
+            cs_parts = []
+            if content_style.get("font_name"):
+                cs_parts.append(f"字体={content_style['font_name']}")
+            if content_style.get("font_size_pt"):
+                cs_parts.append(f"字号={content_style['font_size_pt']}pt")
+            if content_style.get("italic"):
+                cs_parts.append("斜体")
+            if content_style.get("underline"):
+                cs_parts.append("下划线")
+            if content_style.get("alignment"):
+                cs_parts.append(f"对齐={content_style['alignment']}")
+            if cs_parts:
+                lines.append(f"  - 内容样式: {', '.join(cs_parts)}")
+
         note = sec.get("note", "")
         if note:
-            lines.append(f"- **{sec['title']}** (样式: {style_str})")
-            lines.append(f"  - 要求: {note}")
-        else:
-            lines.append(f"- **{sec['title']}** (样式: {style_str})")
+            lines.append(f"  - 说明: {note}")
+
+        requirements = sec.get("requirements", [])
+        for req in requirements:
+            req_type = req.get("type", "other")
+            desc = req.get("description", "")
+            value = req.get("value", "")
+            if value:
+                lines.append(f"  - 约束[{req_type}]: {desc} (值: {value})")
+            else:
+                lines.append(f"  - 约束[{req_type}]: {desc}")
 
     lines.append("")
     return "\n".join(lines)

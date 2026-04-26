@@ -101,7 +101,7 @@ mkdir -p {类别名称}/parsed
 调用`generate_skill`工具，传入Profile路径、Skill名称和用户约束。
 Skill保存到类别目录（如`算法设计实验/algorithm_lab_report_skill.md`）。
 
-**自动注册**：工具自动检测Agent框架目录（.trae/、.claude/等），将Skill注册到所有检测到的目录。无需单独注册步骤。
+**自动注册**：工具自动检测Agent框架目录（.trae/、.claude/、.cursor/、.cline/、.windsurf/、.roo/、.aider/、.continue/、.augment/、.kiro/等），将Skill注册到所有检测到的目录。无需单独注册步骤。
 - 如果检测到Agent目录 → Skill自动复制到每个Agent的skills目录
 - 如果没有检测到任何Agent目录 → Skill仅保存在类别目录下，返回警告让你通知用户
 
@@ -154,7 +154,7 @@ STUDENT_CLASS=你的班级
 - output_path（必需）：保存路径
 
 ### generate_skill
-基于Profile生成特化Skill。**自动注册到所有检测到的Agent目录**（.trae/skills/、.claude/skills/等）。如果没有检测到Agent目录，仅保存到类别目录并返回警告。
+基于Profile生成特化Skill。**自动注册到所有检测到的Agent目录**（.trae/、.claude/、.cursor/、.cline/等）。如果没有检测到Agent目录，仅保存到类别目录并返回警告。
 - profile_path（必需）：Profile JSON路径
 - skill_name（必需）：Skill名称
 - output_path（必需）：输出路径（类别目录）

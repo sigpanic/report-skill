@@ -123,9 +123,16 @@ pip install -r requirements.txt
 | **Trae**        | `.trae/mcp.json` 添加 stdio 配置               |
 | **Claude Code** | `claude_desktop_config.json` 添加 MCP Server |
 | **Cursor**      | 配置 MCP stdio 连接                            |
+| **Cline**       | 配置 MCP stdio 连接                            |
+| **Windsurf**    | 配置 MCP stdio 连接                            |
+| **Roo Code**    | 配置 MCP stdio 连接                            |
+| **Aider**       | 配置 MCP stdio 连接                            |
+| **Continue**    | 配置 MCP stdio 连接                            |
+| **Augment**     | 配置 MCP stdio 连接                            |
+| **Kiro**        | 配置 MCP stdio 连接                            |
 | **其他 MCP 客户端**  | 通过 stdio 连接即可                              |
 
-**特化 Skill 自动注册** — `generate_skill` 会自动检测 `.trae/skills/`、`.claude/skills/`、`.cursor/skills/` 等目录并复制 Skill 文件，无需手动操作。
+**特化 Skill 自动注册** — `generate_skill` 会自动检测项目中的 Agent 框架目录（`.trae/`、`.claude/`、`.cursor/`、`.cline/`、`.windsurf/`、`.roo/`、`.aider/`、`.continue/`、`.augment/`、`.kiro/` 等）并将 Skill 文件复制到对应位置，无需手动操作。
 
 ***
 

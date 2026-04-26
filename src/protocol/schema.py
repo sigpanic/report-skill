@@ -23,7 +23,7 @@ ANALYZE_TEMPLATE_SCHEMA = {
 
 GENERATE_REPORT_SCHEMA = {
     "name": "generate_report",
-    "description": "根据Word模板和TemplateProfile生成报告文档。⚠️ 必须先读取特化Skill文件（.trae/skills/或.claude/skills/下的对应Skill），按Skill规定的工作流程调用本工具。不要跳过Skill直接调用本工具，否则可能遗漏字段、章节或格式要求。",
+    "description": "根据Word模板和TemplateProfile生成报告文档。⚠️ 必须先读取特化Skill文件（Agent框架skills/rules目录下的对应Skill），按Skill规定的工作流程调用本工具。不要跳过Skill直接调用本工具，否则可能遗漏字段、章节或格式要求。",
     "inputSchema": {
         "type": "object",
         "properties": {
@@ -166,7 +166,7 @@ PARSE_COURSE_SCHEMA = {
 
 VERIFY_FORMAT_SCHEMA = {
     "name": "verify_format",
-    "description": "对比生成的Word文档与模板的格式差异，验证格式是否一致。检查页面设置、段落样式、字体、字号、加粗、斜体、下划线等。需要传入skill_key凭据（从特化Skill文件中获取）。",
+    "description": "对比生成的Word文档与模板的格式差异，验证格式是否一致。检查页面设置、段落样式、字体、字号、加粗、斜体、下划线等。如果提供profile_path，还会检查内容是否满足requirements约束（代码辅助检查，结果仅供参考）。需要传入skill_key凭据（从特化Skill文件中获取）。",
     "inputSchema": {
         "type": "object",
         "properties": {
@@ -177,6 +177,10 @@ VERIFY_FORMAT_SCHEMA = {
             "generated_path": {
                 "type": "string",
                 "description": "生成的文档路径"
+            },
+            "profile_path": {
+                "type": "string",
+                "description": "TemplateProfile JSON文件路径（可选，提供后会检查requirements约束）"
             },
             "output_path": {
                 "type": "string",

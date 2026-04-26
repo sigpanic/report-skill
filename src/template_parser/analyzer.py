@@ -198,6 +198,21 @@ def get_analysis_guide() -> str:
 3. **识别章节标题**: 加粗+编号的段落(如"一、实验目的"、"1. Introduction")
 4. **识别注释/说明**: 斜体(italic)、红色(font_color=FF0000)、含"删除"/"注"等关键词的段落
 5. **识别格式要求**: 含"字体"/"字号"/"行间距"/"缩进"等关键词的段落
+6. **识别自然语言需求**: 模板中可能包含以下类型的自然语言约束，必须提取到对应章节的requirements数组中：
+   - **数量约束** (type="min_count"): 如"不少于4个实验目的"、"至少3种方法" → description="不少于4个实验目的", value="4"
+   - **字体要求** (type="font"): 如"代码部分请使用Consolas字体"、"英文用Times New Roman" → description="代码部分请使用Consolas字体", value="Consolas"
+   - **表格结构** (type="table_structure"): 如"表格需包含3列：方法、时间复杂度、空间复杂度" → description="表格需包含3列：方法、时间复杂度、空间复杂度"
+   - **格式要求** (type="format"): 如"此部分首行缩进2字符"、"行间距固定值20磅" → description="此部分首行缩进2字符"
+   - **内容要求** (type="content"): 如"需要包含算法流程图"、"需附运行结果截图" → description="需要包含算法流程图"
+   - **其他约束** (type="other"): 不属于以上类别的约束
+7. **识别per-section内容样式**: 如果模板中某个章节有特殊的格式要求（如代码用等宽字体、摘要用楷体），在content_style中指定。content_style为空时使用全局body_text样式
+8. **识别隐式需求**: 约束不一定以独立段落出现，还可能隐藏在以下位置：
+   - **章节标题中的括号内容**: 如"实验目的（不少于4个）" → 提取为min_count, value="4"
+   - **章节标题中的数量词**: 如"三种算法比较" → 提取为min_count, value="3"
+   - **表格单元格中的提示**: 如"此处填写代码（需可运行）" → 提取为content类型requirement
+   - **下划线区域的格式暗示**: 如封面下划线区域暗示此处需填写内容
+   - **章节间的说明段落**: 如"以下各节均需包含运行结果截图" → 对后续每个章节添加content类型requirement
+   - 识别到隐式需求后，同样提取到对应章节的requirements数组中
 
 ## ⚠️ 必须严格按照以下TypeScript接口定义输出JSON
 以下接口定义由Pydantic模型自动生成，是数据结构的唯一标准：
@@ -220,8 +235,3 @@ def get_analysis_guide() -> str:
 def save_compact(compact: dict, output_path: str):
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(compact, f, ensure_ascii=False, indent=2)
-
-
-def save_profile(profile: dict, output_path: str):
-    with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(profile, f, ensure_ascii=False, indent=2)
