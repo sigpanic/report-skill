@@ -4,7 +4,10 @@ import os
 import re
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+if __name__ == "__main__":
+    _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    if _project_root not in sys.path:
+        sys.path.insert(0, _project_root)
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -24,6 +27,9 @@ from src.protocol.profile_schema import validate_profile_pydantic, fix_profile_p
 from src.protocol.ts_generator import generate_all_ts_interfaces
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+_skill_file_cache = None
+_skill_file_cache_mtime = 0
 
 
 def _wrap_skill_for_framework(content: str, skill_name: str, frontmatter_type: str) -> str:
@@ -67,26 +73,54 @@ def _iter_skill_files():
                     yield os.path.join(skills_base, f_name)
 
 
+def _build_skill_content_cache():
+    global _skill_file_cache, _skill_file_cache_mtime
+    cache = {}
+    for skill_file in _iter_skill_files():
+        try:
+            mtime = os.path.getmtime(skill_file)
+            with open(skill_file, 'r', encoding='utf-8') as sf:
+                cache[skill_file] = {"content": sf.read().upper(), "mtime": mtime}
+        except Exception:
+            pass
+    _skill_file_cache = cache
+    _skill_file_cache_mtime = 0
+    return cache
+
+
+def _get_skill_cache():
+    global _skill_file_cache
+    if _skill_file_cache is None:
+        _skill_file_cache = _build_skill_content_cache()
+    return _skill_file_cache
+
+
 def _check_specialized_key(skill_key: str, category_dir: str = "") -> bool:
     key_upper = skill_key.strip().upper()
     if key_upper == GENERAL_KEY:
         return False
+
+    key_parts = key_upper.split("-")
+    if len(key_parts) < 3:
+        return False
+
     if category_dir and os.path.isdir(category_dir):
         for f_name in os.listdir(category_dir):
             if f_name.endswith(".md") and f_name != "README.md":
                 try:
                     with open(os.path.join(category_dir, f_name), 'r', encoding='utf-8') as sf:
-                        if key_upper in sf.read().upper():
+                        content = sf.read()
+                        if f"RPT-" in content and key_parts[-1] in content:
                             return True
                 except Exception:
                     pass
-    for skill_file in _iter_skill_files():
-        try:
-            with open(skill_file, 'r', encoding='utf-8') as sf:
-                if key_upper in sf.read().upper():
-                    return True
-        except Exception:
-            pass
+
+    cache = _get_skill_cache()
+    for skill_file, entry in cache.items():
+        content = entry["content"]
+        if f"RPT-" in content and key_parts[-1] in content:
+            return True
+
     return False
 
 
@@ -100,13 +134,16 @@ def _has_skill_in_category(category_dir: str) -> bool:
 
 
 def _has_skill_registered(template_path_val: str) -> bool:
-    for skill_file in _iter_skill_files():
-        try:
-            with open(skill_file, 'r', encoding='utf-8') as sf:
-                if template_path_val and template_path_val in sf.read():
-                    return True
-        except Exception:
-            pass
+    if not template_path_val:
+        return False
+
+    cache = _get_skill_cache()
+    template_basename = os.path.basename(template_path_val)
+    for skill_file, entry in cache.items():
+        content = entry["content"]
+        if template_basename.upper() in content or template_path_val.upper() in content:
+            return True
+
     return False
 
 
@@ -293,6 +330,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     with open(target_path, 'w', encoding='utf-8') as f:
                         f.write(fw_content)
                     registered.append(target_path)
+
+            _build_skill_content_cache()
 
             result = f"✅ 特化Skill已生成: {output}\n"
 

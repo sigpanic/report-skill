@@ -2,6 +2,7 @@ import os
 import re
 import shutil
 import tempfile
+import logging
 from pathlib import Path
 from typing import Optional
 from xml.sax.saxutils import escape as xml_escape
@@ -14,6 +15,15 @@ from docx.oxml import parse_xml
 from docx.text.paragraph import Paragraph
 
 from src.template_parser.parser import doc_to_docx
+
+logger = logging.getLogger(__name__)
+
+_HINT_COLOR_RANGES = [
+    (200, 0, 0), (255, 0, 0), (255, 51, 51),
+    (255, 80, 80), (200, 50, 50),
+    (128, 128, 128), (160, 160, 160),
+    (100, 100, 200), (0, 0, 200),
+]
 
 
 def generate_report(
@@ -62,7 +72,7 @@ def generate_report(
                 return doc_to_save
             docx_output_path = str(out_path.with_suffix('.docx'))
             shutil.copy2(docx_output, docx_output_path)
-            print(f"⚠ docx转doc失败，已保存为docx格式: {docx_output_path}")
+            logger.warning("docx转doc失败，已保存为docx格式: %s", docx_output_path)
             return docx_output_path
 
         doc.save(output_path)
@@ -100,7 +110,7 @@ def _docx_to_doc(docx_path: str, doc_output_path: str) -> Optional[str]:
                 pass
         return result
     except Exception as e:
-        print(f"docx转doc失败: {e}")
+        logger.warning("docx转doc失败: %s", e)
         return None
 
 
@@ -148,11 +158,13 @@ def _replace_cover_field_run_level(para, label: str, value: str, field: dict):
     if not value_runs:
         label_text = "".join(r.text for r in label_runs)
         clean_label = label_text.rstrip("：: ").rstrip()
+        found_label_end = False
         for run in label_runs:
             run_text_clean = run.text.rstrip("：: ").rstrip()
-            if run_text_clean == clean_label or clean_label.endswith(run_text_clean):
-                found_label_end = True
-                continue
+            if not found_label_end:
+                if run_text_clean == clean_label or clean_label.endswith(run_text_clean):
+                    found_label_end = True
+                    continue
             if found_label_end:
                 value_runs.append(run)
 
@@ -165,11 +177,6 @@ def _replace_cover_field_run_level(para, label: str, value: str, field: dict):
     new_value = value
     padding_needed = max(0, total_value_len - len(new_value))
     padded_value = new_value + " " * padding_needed
-
-    if len(padded_value) <= 0:
-        for run in value_runs:
-            run.text = ""
-        return
 
     char_idx = 0
     for i, run in enumerate(value_runs):
@@ -218,8 +225,10 @@ def _fill_table_fields(doc, profile: dict, field_values: dict):
                 row, col = int(cell_pos[0]), int(cell_pos[1])
                 cell = table.cell(row, col)
                 _fill_cell_preserving_style(cell, value, field)
-            except Exception:
-                pass
+            except (IndexError, ValueError) as e:
+                logger.warning("表格字段填充失败 key=%s cell=%s: %s", key, field.get("cell", ""), e)
+            except Exception as e:
+                logger.warning("表格字段填充异常 key=%s: %s", key, e)
 
 
 def _fill_cell_preserving_style(cell, value: str, field: dict):
@@ -252,12 +261,13 @@ def _fill_cell_preserving_style(cell, value: str, field: dict):
     else:
         run = p.add_run(value)
         style = field.get("style", {})
-        font_name = style.get("font_name", "宋体")
-        font_size = style.get("font_size_pt", 14)
-        run.font.name = font_name
-        run._element.rPr.rFonts.set(qn('w:eastAsia'), font_name)
-        run.font.size = Pt(font_size)
-        run.font.bold = True
+        font_name = style.get("font_name", "")
+        font_size = style.get("font_size_pt", 0)
+        if font_name:
+            run.font.name = font_name
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), font_name)
+        if font_size:
+            run.font.size = Pt(font_size)
 
     if original_alignment is not None:
         p.alignment = original_alignment
@@ -268,9 +278,14 @@ def _fill_cell_preserving_style(cell, value: str, field: dict):
 def _is_hint_run(run) -> bool:
     try:
         if run.font.color and run.font.color.rgb:
-            rgb = str(run.font.color.rgb).upper()
-            if rgb in ["FF0000", "CC0000", "FF3333"]:
-                return True
+            rgb_str = str(run.font.color.rgb).upper()
+            if len(rgb_str) == 6:
+                r_val = int(rgb_str[0:2], 16)
+                g_val = int(rgb_str[2:4], 16)
+                b_val = int(rgb_str[4:6], 16)
+                for hr, hg, hb in _HINT_COLOR_RANGES:
+                    if abs(r_val - hr) <= 40 and abs(g_val - hg) <= 40 and abs(b_val - hb) <= 40:
+                        return True
     except Exception:
         pass
     return False
@@ -313,7 +328,7 @@ def _find_section_profile(profile: dict, title: str) -> dict:
 
 def _insert_result_images_after(title_para, image_paths: list, format_rules: dict):
     body_style = format_rules.get("body_text", {})
-    font_name = body_style.get("font_name", "宋体")
+    font_name = body_style.get("font_name", "")
 
     insert_after = title_para._element
     for img_path in image_paths:
@@ -335,11 +350,11 @@ def _insert_result_images_after(title_para, image_paths: list, format_rules: dic
 def _insert_section_content(title_para, content: str, images: list, content_tables: list,
                             format_rules: dict, content_style: dict = None, requirements: list = None):
     body_style = format_rules.get("body_text", {})
-    font_name = content_style.get("font_name", "") if content_style and content_style.get("font_name") else body_style.get("font_name", "宋体")
-    font_size_pt = content_style.get("font_size_pt", 0) if content_style and content_style.get("font_size_pt") else body_style.get("font_size_pt", 12)
-    line_spacing_pt = format_rules.get("line_spacing_pt", 22)
-    indent_chars = format_rules.get("first_line_indent_chars", 2)
-    indent_cm = indent_chars * 0.42
+    font_name = content_style.get("font_name", "") if content_style and content_style.get("font_name") else body_style.get("font_name", "")
+    font_size_pt = content_style.get("font_size_pt", 0) if content_style and content_style.get("font_size_pt") else body_style.get("font_size_pt", 0)
+    line_spacing_pt = format_rules.get("line_spacing_pt", 0)
+    indent_chars = format_rules.get("first_line_indent_chars", 0)
+    indent_cm = indent_chars * 0.42 if indent_chars else 0
     font_name_safe = xml_escape(font_name, {'"': '&quot;'})
     is_italic = content_style.get("italic", False) if content_style else False
     is_underline = content_style.get("underline", False) if content_style else False
@@ -350,10 +365,11 @@ def _insert_section_content(title_para, content: str, images: list, content_tabl
     if content:
         content_lines = content.split('\n')
         for line in content_lines:
+            sz_val = int(font_size_pt * 2) if font_size_pt else 24
             new_para_xml = parse_xml(
                 f'<w:p {nsdecls("w")}>'
                 f'<w:pPr>'
-                f'<w:rPr><w:rFonts w:eastAsia="{font_name_safe}"/><w:sz w:val="{int(font_size_pt * 2)}"/></w:rPr>'
+                f'<w:rPr><w:rFonts w:eastAsia="{font_name_safe}"/><w:sz w:val="{sz_val}"/></w:rPr>'
                 f'</w:pPr>'
                 f'</w:p>'
             )
@@ -365,19 +381,23 @@ def _insert_section_content(title_para, content: str, images: list, content_tabl
 
             if line.strip():
                 run = new_p.add_run(line)
-                run.font.name = font_name
-                rPr = run._element.rPr
-                if rPr is not None:
-                    rPr.rFonts.set(qn('w:eastAsia'), font_name)
-                run.font.size = Pt(font_size_pt)
+                if font_name:
+                    run.font.name = font_name
+                    rPr = run._element.rPr
+                    if rPr is not None:
+                        rPr.rFonts.set(qn('w:eastAsia'), font_name)
+                if font_size_pt:
+                    run.font.size = Pt(font_size_pt)
                 if is_italic:
                     run.font.italic = True
                 if is_underline:
                     run.font.underline = True
 
                 pf = new_p.paragraph_format
-                pf.first_line_indent = Cm(indent_cm)
-                pf.line_spacing = Pt(line_spacing_pt)
+                if indent_cm:
+                    pf.first_line_indent = Cm(indent_cm)
+                if line_spacing_pt:
+                    pf.line_spacing = Pt(line_spacing_pt)
                 pf.space_before = Pt(0)
                 pf.space_after = Pt(0)
                 if alignment == "center":
@@ -408,7 +428,8 @@ def _insert_section_content(title_para, content: str, images: list, content_tabl
 
                 img_para = Paragraph(img_para_xml, title_para._element.getparent())
                 img_run = img_para.add_run()
-                img_run.add_picture(img_path, width=Cm(12))
+                img_width = format_rules.get("image_width_cm", 12.0)
+                img_run.add_picture(img_path, width=Cm(img_width))
 
 
 def _remove_annotations(doc, profile: dict):
@@ -457,7 +478,7 @@ def _create_table_element(table_data: dict, font_name: str, font_size_pt: float,
         return parse_xml(f'<w:p {nsdecls("w")}></w:p>')
 
     ns = nsdecls("w")
-    sz = int(font_size_pt * 2)
+    sz = int(font_size_pt * 2) if font_size_pt else 24
     fn = xml_escape(font_name, {'"': '&quot;'})
 
     tbl_xml = f'<w:tbl {ns}>'
@@ -473,8 +494,9 @@ def _create_table_element(table_data: dict, font_name: str, font_size_pt: float,
     if headers:
         tbl_xml += '<w:tr>'
         for h in headers:
-            h_escaped = h.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-            tbl_xml += f'<w:tc><w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="{header_bg_color}"/></w:tcPr>' if header_bg_color else '<w:tc><w:tcPr/>'
+            h_escaped = xml_escape(str(h))
+            bg = f'<w:tc><w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="{header_bg_color}"/></w:tcPr>' if header_bg_color else '<w:tc><w:tcPr/>'
+            tbl_xml += bg
             tbl_xml += f'<w:p><w:pPr><w:jc w:val="center"/><w:rPr><w:rFonts w:eastAsia="{fn}"/><w:sz w:val="{sz}"/><w:b/></w:rPr></w:pPr>'
             tbl_xml += f'<w:r><w:rPr><w:rFonts w:eastAsia="{fn}"/><w:sz w:val="{sz}"/><w:b/></w:rPr><w:t>{h_escaped}</w:t></w:r>'
             tbl_xml += f'</w:p></w:tc>'
@@ -483,7 +505,7 @@ def _create_table_element(table_data: dict, font_name: str, font_size_pt: float,
     for row in rows:
         tbl_xml += '<w:tr>'
         for cell in row:
-            cell_escaped = str(cell).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            cell_escaped = xml_escape(str(cell))
             tbl_xml += f'<w:tc><w:p><w:pPr><w:jc w:val="center"/><w:rPr><w:rFonts w:eastAsia="{fn}"/><w:sz w:val="{sz}"/></w:rPr></w:pPr>'
             tbl_xml += f'<w:r><w:rPr><w:rFonts w:eastAsia="{fn}"/><w:sz w:val="{sz}"/></w:rPr><w:t>{cell_escaped}</w:t></w:r>'
             tbl_xml += f'</w:p></w:tc>'

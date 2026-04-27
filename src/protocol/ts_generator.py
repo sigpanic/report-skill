@@ -24,6 +24,11 @@ def _python_type_to_ts(annotation) -> str:
         return f"{inner}[]"
 
     if origin is dict or annotation is dict:
+        args = get_args(annotation)
+        if args and len(args) == 2:
+            key_ts = _python_type_to_ts(args[0])
+            val_ts = _python_type_to_ts(args[1])
+            return f"Record<{key_ts}, {val_ts}>"
         return "Record<string, any>"
 
     if annotation is str:

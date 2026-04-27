@@ -1,11 +1,14 @@
 import os
 import json
 import tempfile
+import logging
 from typing import Optional
 
 from docx import Document
 
 from src.template_parser.parser import doc_to_docx
+
+logger = logging.getLogger(__name__)
 
 
 def verify_format(template_path: str, generated_path: str, output_path: Optional[str] = None,
@@ -206,36 +209,56 @@ def _verify_paragraphs(template_doc, generated_doc) -> list:
     t_paras = template_doc.paragraphs
     g_paras = generated_doc.paragraphs
 
-    min_len = min(len(t_paras), len(g_paras))
-    for i in range(min_len):
-        t_para = t_paras[i]
-        g_para = g_paras[i]
+    g_para_map = {}
+    for i, g_para in enumerate(g_paras):
+        text = g_para.text.strip()
+        if text:
+            g_para_map.setdefault(text, []).append(i)
 
+    matched_g_indices = set()
+
+    for i, t_para in enumerate(t_paras):
         t_text = t_para.text.strip()
-        g_text = g_para.text.strip()
-
-        if not t_text and not g_text:
+        if not t_text:
             continue
 
+        g_indices = g_para_map.get(t_text, [])
+        g_idx = None
+        for gi in g_indices:
+            if gi not in matched_g_indices:
+                g_idx = gi
+                matched_g_indices.add(gi)
+                break
+
+        if g_idx is None:
+            results.append({
+                "template_index": i,
+                "template_text": t_text[:50],
+                "generated_text": "(not found)",
+                "text_match": False,
+            })
+            continue
+
+        g_para = g_paras[g_idx]
         result = {
-            "index": i,
+            "template_index": i,
+            "generated_index": g_idx,
             "template_text": t_text[:50],
-            "generated_text": g_text[:50],
-            "text_match": t_text == g_text,
+            "generated_text": g_para.text.strip()[:50],
+            "text_match": True,
         }
 
-        if t_text == g_text:
-            result["alignment_match"] = t_para.alignment == g_para.alignment
+        result["alignment_match"] = t_para.alignment == g_para.alignment
 
-            t_runs = t_para.runs
-            g_runs = g_para.runs
+        t_runs = t_para.runs
+        g_runs = g_para.runs
 
-            if t_runs and g_runs:
-                result["font_name_match"] = _compare_font_name(t_runs[0], g_runs[0])
-                result["font_size_match"] = _compare_font_size(t_runs[0], g_runs[0])
-                result["bold_match"] = t_runs[0].font.bold == g_runs[0].font.bold
-                result["italic_match"] = t_runs[0].font.italic == g_runs[0].font.italic
-                result["underline_match"] = t_runs[0].font.underline == g_runs[0].font.underline
+        if t_runs and g_runs:
+            result["font_name_match"] = _compare_font_name(t_runs[0], g_runs[0])
+            result["font_size_match"] = _compare_font_size(t_runs[0], g_runs[0])
+            result["bold_match"] = t_runs[0].font.bold == g_runs[0].font.bold
+            result["italic_match"] = t_runs[0].font.italic == g_runs[0].font.italic
+            result["underline_match"] = t_runs[0].font.underline == g_runs[0].font.underline
 
         results.append(result)
 

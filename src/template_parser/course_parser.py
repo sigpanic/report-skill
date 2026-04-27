@@ -1,14 +1,12 @@
 import os
 import tempfile
+import logging
 from typing import Optional, cast
+
+logger = logging.getLogger(__name__)
 
 
 def parse_course_material(file_path: str, enable_ocr: bool = True) -> dict:
-    """
-    解析课件文件，提取文本内容。
-    支持 .pptx, .ppt, .docx, .doc 格式。
-    启用OCR时，会尝试提取图片中的文字。
-    """
     ext = os.path.splitext(file_path)[1].lower()
 
     if ext == '.pptx':
@@ -24,7 +22,6 @@ def parse_course_material(file_path: str, enable_ocr: bool = True) -> dict:
 
 
 def _parse_pptx(file_path: str, enable_ocr: bool = True) -> dict:
-    """解析pptx文件"""
     try:
         from pptx import Presentation
         prs = Presentation(file_path)
@@ -39,7 +36,7 @@ def _parse_pptx(file_path: str, enable_ocr: bool = True) -> dict:
             }
             for shape in slide.shapes:
                 if shape.has_text_frame:
-                    for para in shape.text_frame.paragraphs:  # type: ignore[union-attr]
+                    for para in shape.text_frame.paragraphs:
                         text = para.text.strip()
                         if text:
                             slide_content["texts"].append(text)
@@ -51,7 +48,7 @@ def _parse_pptx(file_path: str, enable_ocr: bool = True) -> dict:
                             ocr_texts.append(f"[幻灯片{i+1}图片文字]: {ocr_text}")
                 if shape.has_table:
                     from pptx.table import Table as PptxTable
-                    table = cast(PptxTable, shape.table)  # type: ignore[union-attr]
+                    table = cast(PptxTable, shape.table)
                     for row in table.rows:
                         row_text = []
                         for cell in row.cells:
@@ -91,7 +88,6 @@ def _parse_pptx(file_path: str, enable_ocr: bool = True) -> dict:
 
 
 def _ocr_image_from_shape(shape, slide_num: int) -> Optional[str]:
-    """尝试从PPT形状中提取图片并进行OCR"""
     try:
         import pytesseract
         from PIL import Image
@@ -104,13 +100,16 @@ def _ocr_image_from_shape(shape, slide_num: int) -> Optional[str]:
         text = pytesseract.image_to_string(img, lang='chi_sim+eng')
         return text.strip() if text.strip() else None
     except ImportError:
+        logger.info("pytesseract not installed, OCR skipped")
         return None
-    except Exception:
+    except Exception as e:
+        logger.debug("OCR failed for slide %d: %s", slide_num, e)
         return None
 
 
 def _parse_ppt(file_path: str, enable_ocr: bool = True) -> dict:
-    """解析ppt文件（先转换为pptx）"""
+    powerpoint = None
+    presentation = None
     try:
         import win32com.client
         powerpoint = win32com.client.Dispatch("PowerPoint.Application")
@@ -123,24 +122,35 @@ def _parse_ppt(file_path: str, enable_ocr: bool = True) -> dict:
         pptx_path = os.path.join(tmp_dir, "converted.pptx")
         presentation.Saveas(pptx_path, 24)
         presentation.Close()
+        presentation = None
         powerpoint.Quit()
+        powerpoint = None
 
         result = _parse_pptx(pptx_path, enable_ocr)
         result["format"] = "ppt (converted)"
         return result
     except Exception as e:
+        if presentation:
+            try:
+                presentation.Close()
+            except Exception:
+                pass
+        if powerpoint:
+            try:
+                powerpoint.Quit()
+            except Exception:
+                pass
         try:
             result = _parse_pptx(file_path, enable_ocr)
             if result:
                 result["format"] = "ppt (partial)"
                 return result
-        except:
+        except Exception:
             pass
         return {"error": f"ppt解析失败: {str(e)}", "text": ""}
 
 
 def _parse_docx(file_path: str, enable_ocr: bool = True) -> dict:
-    """解析docx文件"""
     try:
         from docx import Document
         doc = Document(file_path)
@@ -181,7 +191,6 @@ def _parse_docx(file_path: str, enable_ocr: bool = True) -> dict:
 
 
 def _parse_doc(file_path: str, enable_ocr: bool = True) -> dict:
-    """解析doc文件（先转换为docx）"""
     try:
         from src.template_parser.parser import doc_to_docx
         docx_path = doc_to_docx(file_path)

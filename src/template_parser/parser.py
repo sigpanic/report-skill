@@ -1,9 +1,32 @@
 import os
-import json
 import re
 import tempfile
+import atexit
+import shutil
+from collections import Counter
+from statistics import median
 from pathlib import Path
 from typing import Optional
+
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+_EMU_PER_CM = 360000
+_EMU_PER_PT = 12700
+
+_tmp_dirs_to_cleanup = []
+
+
+def _cleanup_tmp_dirs():
+    for d in _tmp_dirs_to_cleanup:
+        if os.path.exists(d):
+            try:
+                shutil.rmtree(d)
+            except Exception:
+                pass
+
+
+atexit.register(_cleanup_tmp_dirs)
+
 
 def doc_to_docx(doc_path: str) -> Optional[str]:
     try:
@@ -21,6 +44,7 @@ def doc_to_docx(doc_path: str) -> Optional[str]:
             )
             try:
                 tmp_dir = tempfile.mkdtemp()
+                _tmp_dirs_to_cleanup.append(tmp_dir)
                 docx_path = os.path.join(tmp_dir, "converted.docx")
                 doc.SaveAs2(os.path.abspath(docx_path), FileFormat=16)
             finally:
@@ -38,115 +62,98 @@ def doc_to_docx(doc_path: str) -> Optional[str]:
         print(f"doc转docx失败: {e}")
         return None
 
+
 def parse_template(template_path: str) -> dict:
-    """
-    解析Word模板文档，返回结构化描述。
-    
-    返回结构：
-    {
-        "page_setup": {...},
-        "cover_page": {
-            "title": {...},
-            "info_lines": [...],
-            "college": {...},
-            "table": {...}
-        },
-        "content_sections": [
-            {"title": "一、实验目的", "style": {...}, "note": "..."},
-            ...
-        ],
-        "format_rules": {...},
-        "tables": [...]
-    }
-    """
     path = Path(template_path)
     actual_path = template_path
-    
+
     if path.suffix.lower() == '.doc':
         converted = doc_to_docx(template_path)
         if converted:
             actual_path = converted
         else:
             raise ValueError(f"无法转换.doc文件: {template_path}")
-    
+
     from docx import Document
-    from docx.shared import Cm, Pt, Emu
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
-    
+
     doc = Document(actual_path)
-    
+
     result = {
         "page_setup": _parse_page_setup(doc),
         "elements": [],
         "tables": [],
         "format_rules": {}
     }
-    
+
+    para_map = {p._element: p for p in doc.paragraphs}
+    table_map = {t._element: t for t in doc.tables}
+
     for element in doc.element.body:
         tag = element.tag.split('}')[-1] if '}' in element.tag else element.tag
-        if tag == 'p':
-            para = None
-            for p in doc.paragraphs:
-                if p._element is element:
-                    para = p
-                    break
-            if para is not None:
-                result["elements"].append(_parse_paragraph(para))
-        elif tag == 'tbl':
-            table = None
-            for t in doc.tables:
-                if t._element is element:
-                    table = t
-                    break
-            if table is not None:
-                result["tables"].append(_parse_table(table))
-    
+        if tag == 'p' and element in para_map:
+            result["elements"].append(_parse_paragraph(para_map[element]))
+        elif tag == 'tbl' and element in table_map:
+            result["tables"].append(_parse_table(table_map[element]))
+
     result["format_rules"] = _extract_format_rules(result)
-    
+
     return result
 
+
 def _parse_page_setup(doc) -> dict:
-    """解析页面设置"""
     if doc.sections:
         section = doc.sections[0]
         return {
-            "page_width_cm": round(section.page_width / 360000, 2) if section.page_width else None,
-            "page_height_cm": round(section.page_height / 360000, 2) if section.page_height else None,
-            "left_margin_cm": round(section.left_margin / 360000, 2) if section.left_margin else None,
-            "right_margin_cm": round(section.right_margin / 360000, 2) if section.right_margin else None,
-            "top_margin_cm": round(section.top_margin / 360000, 2) if section.top_margin else None,
-            "bottom_margin_cm": round(section.bottom_margin / 360000, 2) if section.bottom_margin else None,
+            "page_width_cm": round(section.page_width / _EMU_PER_CM, 2) if section.page_width else None,
+            "page_height_cm": round(section.page_height / _EMU_PER_CM, 2) if section.page_height else None,
+            "left_margin_cm": round(section.left_margin / _EMU_PER_CM, 2) if section.left_margin else None,
+            "right_margin_cm": round(section.right_margin / _EMU_PER_CM, 2) if section.right_margin else None,
+            "top_margin_cm": round(section.top_margin / _EMU_PER_CM, 2) if section.top_margin else None,
+            "bottom_margin_cm": round(section.bottom_margin / _EMU_PER_CM, 2) if section.bottom_margin else None,
         }
     return {}
 
+
+def _alignment_to_str(alignment) -> Optional[str]:
+    if alignment is None:
+        return None
+    mapping = {
+        WD_ALIGN_PARAGRAPH.LEFT: "LEFT",
+        WD_ALIGN_PARAGRAPH.CENTER: "CENTER",
+        WD_ALIGN_PARAGRAPH.RIGHT: "RIGHT",
+        WD_ALIGN_PARAGRAPH.JUSTIFY: "JUSTIFY",
+        WD_ALIGN_PARAGRAPH.DISTRIBUTE: "DISTRIBUTE",
+    }
+    return mapping.get(alignment, str(alignment).split("(")[0].split(".")[-1].strip() if alignment else None)
+
+
 def _parse_paragraph(para) -> dict:
-    """解析段落"""
     result = {
         "type": "paragraph",
         "text": para.text,
         "style": para.style.name if para.style else None,
-        "alignment": str(para.alignment) if para.alignment else None,
+        "alignment": _alignment_to_str(para.alignment),
         "runs": []
     }
-    
+
     pf = para.paragraph_format
     if pf.first_line_indent:
-        result["first_line_indent_cm"] = round(pf.first_line_indent / 360000, 2)
+        result["first_line_indent_cm"] = round(pf.first_line_indent / _EMU_PER_CM, 2)
     if pf.space_before:
-        result["space_before_pt"] = round(pf.space_before / 12700, 1)
+        result["space_before_pt"] = round(pf.space_before / _EMU_PER_PT, 1)
     if pf.space_after:
-        result["space_after_pt"] = round(pf.space_after / 12700, 1)
+        result["space_after_pt"] = round(pf.space_after / _EMU_PER_PT, 1)
     if pf.line_spacing:
         result["line_spacing"] = pf.line_spacing
     if pf.line_spacing_rule:
         result["line_spacing_rule"] = str(pf.line_spacing_rule)
-    
+
     for run in para.runs:
         run_info = {"text": run.text}
         if run.font.name:
             run_info["font_name"] = run.font.name
         if run.font.size:
-            run_info["font_size_pt"] = round(run.font.size / 12700, 1)
+            run_info["font_size_pt"] = round(run.font.size / _EMU_PER_PT, 1)
         if run.font.bold:
             run_info["bold"] = True
         if run.font.italic:
@@ -156,11 +163,11 @@ def _parse_paragraph(para) -> dict:
         if run.font.color and run.font.color.rgb:
             run_info["font_color"] = str(run.font.color.rgb)
         result["runs"].append(run_info)
-    
+
     return result
 
+
 def _parse_table(table) -> dict:
-    """解析表格"""
     result = {
         "type": "table",
         "rows": len(table.rows),
@@ -168,33 +175,49 @@ def _parse_table(table) -> dict:
         "cells": [],
         "column_widths_cm": []
     }
-    
+
+    seen_tc = set()
+
     for row_idx, row in enumerate(table.rows):
         for col_idx, cell in enumerate(row.cells):
+            tc_id = id(cell._tc)
+            if tc_id in seen_tc:
+                continue
+            seen_tc.add(tc_id)
+
             cell_info = {
                 "row": row_idx,
                 "col": col_idx,
                 "text": cell.text.strip()
             }
-            actual_cell = table.cell(row_idx, col_idx)
+
             for span_col in range(col_idx + 1, len(row.cells)):
                 try:
-                    if row.cells[span_col]._tc is actual_cell._tc:
+                    if row.cells[span_col]._tc is cell._tc:
                         cell_info["colspan"] = span_col - col_idx + 1
                         break
                 except Exception:
                     pass
-            
+
+            for span_row in range(row_idx + 1, len(table.rows)):
+                try:
+                    if table.cell(span_row, col_idx)._tc is cell._tc:
+                        cell_info["rowspan"] = span_row - row_idx + 1
+                        break
+                except Exception:
+                    pass
+
             cell_info["paragraphs"] = []
             for p in cell.paragraphs:
                 cell_info["paragraphs"].append(_parse_paragraph(p))
             result["cells"].append(cell_info)
-    
+
     for col in table.columns:
         if col.width:
-            result["column_widths_cm"].append(round(col.width / 360000, 2))
-    
+            result["column_widths_cm"].append(round(col.width / _EMU_PER_CM, 2))
+
     return result
+
 
 def _extract_format_rules(parsed: dict) -> dict:
     rules = {
@@ -209,10 +232,14 @@ def _extract_format_rules(parsed: dict) -> dict:
     section_patterns = [
         r'^[一二三四五六七八九十]+、',
         r'^[（(][一二三四五六七八九十]+[）)]',
+        r'^第[一二三四五六七八九十\d]+[章节章部篇]',
         r'^\d+[\.、]\s',
         r'^\d+\.\d+\s',
+        r'^\d+\.\d+\.\d+\s',
         r'^Chapter\s+\d+',
         r'^Section\s+\d+',
+        r'^Part\s+[IVXLCDM\d]+',
+        r'^Appendix\s+[A-Z]',
     ]
 
     font_size_groups = {}
@@ -227,18 +254,20 @@ def _extract_format_rules(parsed: dict) -> dict:
     body_candidate = None
     header_candidate = None
     if font_size_groups:
-        sorted_groups = sorted(font_size_groups.items(), key=lambda x: (-x[0][1], -x[1]))
-        body_candidate = sorted_groups[-1][0] if len(sorted_groups) == 1 else None
-        for (fn, fs, bold), count in sorted_groups:
+        sorted_by_count = sorted(font_size_groups.items(), key=lambda x: -x[1])
+
+        for (fn, fs, bold), count in sorted_by_count:
             if not bold and fs > 0:
                 body_candidate = (fn, fs, bold)
                 break
-        for (fn, fs, bold), count in sorted_groups:
+
+        for (fn, fs, bold), count in sorted_by_count:
             if bold and fs > 0:
                 header_candidate = (fn, fs, bold)
                 break
-        if not header_candidate and len(sorted_groups) > 1:
-            for (fn, fs, bold), count in sorted_groups:
+
+        if not header_candidate and len(sorted_by_count) > 1:
+            for (fn, fs, bold), count in sorted_by_count:
                 if body_candidate and fs > body_candidate[1]:
                     header_candidate = (fn, fs, bold)
                     break
@@ -251,11 +280,12 @@ def _extract_format_rules(parsed: dict) -> dict:
         rules["section_header"]["font_size_pt"] = header_candidate[1]
         rules["section_header"]["bold"] = header_candidate[2]
 
+    section_header_styles = []
     for elem in parsed["elements"]:
         text = elem.get("text", "").strip()
         is_section = False
         for pattern in section_patterns:
-            if re.match(pattern, text):
+            if re.match(pattern, text, re.IGNORECASE):
                 is_section = True
                 break
 
@@ -269,28 +299,67 @@ def _extract_format_rules(parsed: dict) -> dict:
                     is_section = True
 
         if is_section:
+            style = {"font_name": "", "font_size_pt": 0, "bold": False}
             for run in elem.get("runs", []):
                 if run.get("font_name"):
-                    rules["section_header"]["font_name"] = run["font_name"]
+                    style["font_name"] = run["font_name"]
                 if run.get("font_size_pt"):
-                    rules["section_header"]["font_size_pt"] = run["font_size_pt"]
+                    style["font_size_pt"] = run["font_size_pt"]
                 if run.get("bold"):
-                    rules["section_header"]["bold"] = run["bold"]
-            break
+                    style["bold"] = run["bold"]
+            if style["font_name"] or style["font_size_pt"]:
+                section_header_styles.append(style)
+
+    if section_header_styles:
+        style_keys = [(s["font_name"], s["font_size_pt"], s["bold"]) for s in section_header_styles]
+        most_common_key = Counter(style_keys).most_common(1)[0][0]
+        for s in section_header_styles:
+            if (s["font_name"], s["font_size_pt"], s["bold"]) == most_common_key:
+                rules["section_header"]["font_name"] = s["font_name"]
+                rules["section_header"]["font_size_pt"] = s["font_size_pt"]
+                rules["section_header"]["bold"] = s["bold"]
+                break
+
+    line_spacing_values = []
+    first_line_indent_values = []
+    space_before_values = []
+    space_after_values = []
+
+    for elem in parsed["elements"]:
+        if elem.get("line_spacing"):
+            ls = elem["line_spacing"]
+            if isinstance(ls, (int, float)) and ls > 0:
+                line_spacing_values.append(ls)
+        if elem.get("first_line_indent_cm"):
+            fi = elem["first_line_indent_cm"]
+            if fi > 0:
+                first_line_indent_values.append(fi)
+        if elem.get("space_before_pt"):
+            space_before_values.append(elem["space_before_pt"])
+        if elem.get("space_after_pt"):
+            space_after_values.append(elem["space_after_pt"])
+
+    if line_spacing_values:
+        rules["line_spacing_pt"] = round(median(line_spacing_values), 1)
+    if first_line_indent_values:
+        body_fs = rules["body_text"]["font_size_pt"] or 12
+        avg_indent_cm = median(first_line_indent_values)
+        char_width_cm = body_fs * 0.035
+        rules["first_line_indent_chars"] = max(0, round(avg_indent_cm / char_width_cm)) if char_width_cm > 0 else 0
+    if space_before_values:
+        rules["space_before"] = round(median(space_before_values), 1)
+    if space_after_values:
+        rules["space_after"] = round(median(space_after_values), 1)
 
     if not rules["body_text"]["font_name"]:
-        rules["body_text"]["font_name"] = "宋体"
+        rules["body_text"]["font_name"] = ""
     if not rules["body_text"]["font_size_pt"]:
-        rules["body_text"]["font_size_pt"] = 12.0
+        rules["body_text"]["font_size_pt"] = 0
     if not rules["section_header"]["font_name"]:
-        rules["section_header"]["font_name"] = "黑体"
+        rules["section_header"]["font_name"] = ""
     if not rules["section_header"]["font_size_pt"]:
-        rules["section_header"]["font_size_pt"] = 14.0
+        rules["section_header"]["font_size_pt"] = 0
     if not rules["section_header"]["bold"]:
-        rules["section_header"]["bold"] = True
-    if not rules["line_spacing_pt"]:
-        rules["line_spacing_pt"] = 22
-    if not rules["first_line_indent_chars"]:
-        rules["first_line_indent_chars"] = 2
+        rules["section_header"]["bold"] = False
 
     return rules

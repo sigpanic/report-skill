@@ -177,23 +177,37 @@ def fix_profile_pydantic(data: dict) -> dict:
     if result["valid"]:
         profile = result["profile"]
     else:
-        profile = data
+        profile = {
+            "template_path": data.get("template_path", ""),
+            "page_setup": data.get("page_setup", {}),
+            "cover_page": data.get("cover_page", {}),
+            "tables": data.get("tables", []),
+            "sections": data.get("sections", []),
+            "format_rules": data.get("format_rules", {}),
+            "annotation_patterns": data.get("annotation_patterns", []),
+            "removal_patterns": data.get("removal_patterns", []),
+            "fields": data.get("fields", []),
+        }
 
     if not profile.get("fields"):
         all_fields = []
         seen_keys = set()
-        for f in profile.get("cover_page", {}).get("fields", []):
-            if isinstance(f, dict) and f.get("key") and f["key"] not in seen_keys:
-                all_fields.append({"source": "cover_page", **f})
-                seen_keys.add(f["key"])
-        for t in profile.get("tables", []):
-            if isinstance(t, dict):
-                for f in t.get("fields", []):
-                    if isinstance(f, dict) and f.get("key"):
-                        unique = f"{f['key']}_t{t.get('index', 0)}_{f.get('cell', '')}"
-                        if unique not in seen_keys:
-                            all_fields.append({"source": f"table_{t.get('index', 0)}", **f})
-                            seen_keys.add(unique)
+        cover_page = profile.get("cover_page", {})
+        if isinstance(cover_page, dict):
+            for f in cover_page.get("fields", []):
+                if isinstance(f, dict) and f.get("key") and f["key"] not in seen_keys:
+                    all_fields.append({"source": "cover_page", **f})
+                    seen_keys.add(f["key"])
+        tables = profile.get("tables", [])
+        if isinstance(tables, list):
+            for t in tables:
+                if isinstance(t, dict):
+                    for f in t.get("fields", []):
+                        if isinstance(f, dict) and f.get("key"):
+                            unique = f"{f['key']}_t{t.get('index', 0)}_{f.get('cell', '')}"
+                            if unique not in seen_keys:
+                                all_fields.append({"source": f"table_{t.get('index', 0)}", **f})
+                                seen_keys.add(unique)
         profile["fields"] = all_fields
 
     return profile

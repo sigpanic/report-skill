@@ -4,11 +4,13 @@ from typing import Optional
 
 
 def _escape_format(s: str) -> str:
-    return s.replace('{', '{{').replace('}', '}}')
+    result = s.replace('\\', '\\\\')
+    result = result.replace('{', '{{').replace('}', '}}')
+    return result
 
 
 def _get_skill_key_suffix(skill_name: str) -> str:
-    h = hashlib.md5(skill_name.encode()).hexdigest()[:4].upper()
+    h = hashlib.sha256(skill_name.encode()).hexdigest()[:8].upper()
     return h
 
 
@@ -63,7 +65,7 @@ Profile JSON已就绪，本Skill指导你完成报告生成。
 ### generate_report
 生成报告Word文档（输出格式自动与模板一致）。
 - template_path（必需）: 模板文件路径
-- output_path（必需）: 输出文件路径（保存到实验子目录）
+- output_path（必需）: 输出文件路径
 - profile_path（必需）: TemplateProfile JSON文件路径
 - field_values（必需）: 字段值字典
 - sections（必需）: 章节内容数组，每项含title和content
@@ -78,11 +80,9 @@ Profile JSON已就绪，本Skill指导你完成报告生成。
 - 生成的Word文档格式必须与模板完全一致——最高优先级
 - 所有注释段落会被自动删除（根据annotation_patterns/removal_patterns）
 - 章节内容按Profile中的格式规则排版
-- 图片居中插入，宽度12cm
 - 如果有任何不确定的信息，直接询问用户，不要自己编造
 - 模板中的注释和说明必须遵守
 - 输出文件后缀由工具自动保证（.doc模板→.doc输出，.docx→.docx）
-- 读取.env文件获取个人信息（STUDENT_ID, STUDENT_NAME, STUDENT_CLASS）
 
 凭据后半部分：**{key_suffix}**。请与前半部分拼接后传入skill_key参数（如RPT-{skill_name}-2026-{key_suffix}）。
 """
@@ -264,7 +264,7 @@ def _generate_format_description(profile: dict) -> str:
         body_parts.append(f"字体={body['font_name']}")
     if body.get("font_size_pt"):
         body_parts.append(f"字号={body['font_size_pt']}pt")
-    lines.append(f"- 正文: {', '.join(body_parts) if body_parts else '宋体, 12pt'}")
+    lines.append(f"- 正文: {', '.join(body_parts) if body_parts else '（未指定，由模板决定）'}")
 
     header_parts = []
     if header.get("font_name"):
@@ -273,18 +273,22 @@ def _generate_format_description(profile: dict) -> str:
         header_parts.append(f"字号={header['font_size_pt']}pt")
     if header.get("bold"):
         header_parts.append("加粗")
-    lines.append(f"- 章节标题: {', '.join(header_parts) if header_parts else '黑体, 14pt, 加粗'}")
+    lines.append(f"- 章节标题: {', '.join(header_parts) if header_parts else '（未指定，由模板决定）'}")
 
-    lines.append(f"- 行间距: 固定值{rules.get('line_spacing_pt', 22)}磅")
-    lines.append(f"- 首行缩进: {rules.get('first_line_indent_chars', 2)}个字符")
-    lines.append(f"- 段前段后间距: {rules.get('space_before', 0)}pt / {rules.get('space_after', 0)}pt")
+    ls = rules.get('line_spacing_pt', 0)
+    lines.append(f"- 行间距: 固定值{ls}磅" if ls else "- 行间距: （未指定，由模板决定）")
+    indent = rules.get('first_line_indent_chars', 0)
+    lines.append(f"- 首行缩进: {indent}个字符" if indent else "- 首行缩进: （未指定，由模板决定）")
+    sb = rules.get('space_before', 0)
+    sa = rules.get('space_after', 0)
+    lines.append(f"- 段前段后间距: {sb}pt / {sa}pt" if sb or sa else "- 段前段后间距: （未指定，由模板决定）")
 
     return "\n".join(lines)
 
 
 def _generate_constraints_description(constraints: Optional[dict]) -> str:
     if not constraints:
-        return "（无特殊约束，按通用学术报告风格撰写）"
+        return "（无特殊约束，按通用报告风格撰写）"
 
     lines = []
     for category, rules in constraints.items():
@@ -310,48 +314,55 @@ def _generate_workflow(profile: dict, skill_name: str) -> str:
         for f in _deduplicate_fields(fields)
     )
 
-    return f"""### 步骤1：获取用户信息
-- 读取项目根目录的`.env`文件获取个人信息（STUDENT_ID, STUDENT_NAME, STUDENT_CLASS等）
+    has_course_step = any("课件" in s.get("note", "") or "course" in s.get("note", "").lower() for s in sections)
+
+    workflow = """### 步骤1：获取用户信息
+- 检查项目根目录的`.env`文件获取个人信息（如STUDENT_ID, STUDENT_NAME, STUDENT_CLASS等）
 - 如果.env中存在对应信息，直接使用，不需要询问用户
 - .env中不存在的字段值才需要询问用户
 
-### 步骤2：创建实验目录
-- 在类别目录下创建本次实验的子目录（英文简写命名，如maxsum/、sort/、graph/）
-- 课件文件放入实验子目录
-- 生成的报告和源代码也输出到实验子目录
-
+### 步骤2：创建输出目录
+- 在类别目录下创建本次报告的子目录
+- 生成的报告和相关文件输出到该子目录
+"""
+    if has_course_step:
+        workflow += """
 ### 步骤3：读取课件（如有）
 - 如果用户提供了课件文件，调用`parse_course_material`解析课件
 - 解析结果默认保存在课件所在目录
 - 根据课件内容理解报告要求
 - 如果没有课件，根据用户描述理解要求
+"""
 
-### 步骤4：准备内容
+    workflow += f"""
+### 步骤{4 if has_course_step else 3}：准备内容
 - 根据课件/资料内容，准备各章节的文字内容
 - 章节列表：
 {section_list}
 - 每个章节的内容必须遵守上方"各章节要求"中的说明
 - 内容风格应自然，避免AI感
 
-### 步骤5：准备字段值
+### 步骤{5 if has_course_step else 4}：准备字段值
 - 收集所有需要填写的字段：
 {field_list}
 - 优先使用.env中的信息
 - 不确定的字段值必须询问用户
 
-### 步骤6：调用MCP工具生成文档
+### 步骤{6 if has_course_step else 5}：调用MCP工具生成文档
 - 调用 generate_report 工具，传入：
   - template_path: 模板文件路径
-  - output_path: 输出路径（保存到实验子目录，后缀由工具自动处理）
+  - output_path: 输出路径（后缀由工具自动处理）
   - profile_path: TemplateProfile JSON路径
   - field_values: 字段值字典
   - sections: 章节内容数组
 - sections数组中每项的title必须与Profile中的section title完全匹配
 
-### 步骤7：验证输出
+### 步骤{7 if has_course_step else 6}：验证输出
 - 调用 verify_format 工具验证格式一致性
 - 检查所有字段是否正确填充
 - 如果格式不一致，分析原因并修正"""
+
+    return workflow
 
 
 def _deduplicate_fields(fields: list) -> list:
