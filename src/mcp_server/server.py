@@ -96,17 +96,20 @@ def _get_skill_cache():
 
 
 def _normalize_key(k: str) -> str:
-    return k.strip().upper().replace("-", "")
+    return re.sub(r'[\s\-]+', '', k.strip()).upper()
 
 
 def _check_specialized_key(skill_key: str, category_dir: str = "") -> bool:
     key_norm = _normalize_key(skill_key)
+    if not key_norm or len(key_norm) < 8:
+        return False
     if key_norm == _normalize_key(_G):
         return False
 
-    key_parts = skill_key.strip().upper().split("-")
-    if len(key_parts) < 3:
+    key_parts = key_norm.split("2026")
+    if len(key_parts) < 2:
         return False
+    suffix = key_parts[-1]
 
     if category_dir and os.path.isdir(category_dir):
         for f_name in os.listdir(category_dir):
@@ -114,7 +117,8 @@ def _check_specialized_key(skill_key: str, category_dir: str = "") -> bool:
                 try:
                     with open(os.path.join(category_dir, f_name), 'r', encoding='utf-8') as sf:
                         content = sf.read()
-                        if f"RPT-" in content and key_parts[-1] in content:
+                        content_norm = _normalize_key(content)
+                        if suffix in content_norm and "RPT" in content_norm:
                             return True
                 except Exception:
                     pass
@@ -122,7 +126,8 @@ def _check_specialized_key(skill_key: str, category_dir: str = "") -> bool:
     cache = _get_skill_cache()
     for skill_file, entry in cache.items():
         content = entry["content"]
-        if f"RPT-" in content and key_parts[-1] in content:
+        content_norm = _normalize_key(content)
+        if suffix in content_norm and "RPT" in content_norm:
             return True
 
     return False

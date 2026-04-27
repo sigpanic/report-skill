@@ -24,7 +24,9 @@ description: "Generate '{template_name}' Word documents following template forma
 生成「{template_name}」Word文档，严格遵循模板格式。
 Profile JSON已就绪，本Skill指导你完成报告生成。
 
-调用本Skill涉及的MCP工具时，需要传入凭据以确认你已阅读本文件。凭据分为两部分，本文件中包含前半部分：**RPT-{skill_name}-2026**，后半部分在文件末尾。调用工具时请将两部分拼接后传入skill_key参数。
+调用本Skill涉及的MCP工具时，需要传入凭据以确认你已阅读本文件。凭据分为两部分，本文件中包含前半部分：**RPT-{skill_name}-2026-**，后半部分在文件末尾。调用工具时请将两部分拼接后传入skill_key参数。
+
+{critical_constraints}
 
 ## 模板信息
 - 模板文件: `{template_filename}`
@@ -83,6 +85,7 @@ Profile JSON已就绪，本Skill指导你完成报告生成。
 - 如果有任何不确定的信息，直接询问用户，不要自己编造
 - 模板中的注释和说明必须遵守
 - 输出文件后缀由工具自动保证（.doc模板→.doc输出，.docx→.docx）
+- **🚫 你必须遵守上方「关键约束」区域的所有约束，违反任何约束都是不可接受的**
 
 凭据后半部分：**{key_suffix}**。请与前半部分拼接后传入skill_key参数。
 """
@@ -104,6 +107,7 @@ def generate_skill(
     format_section = _generate_format_description(profile)
     constraints_section = _generate_constraints_description(constraints)
     workflow_section = _generate_workflow(profile, skill_name)
+    critical_constraints = _generate_critical_constraints(profile, constraints)
 
     key_suffix = _get_skill_key_suffix(skill_name)
 
@@ -119,6 +123,7 @@ def generate_skill(
         format_section=_escape_format(format_section),
         constraints_section=_escape_format(constraints_section),
         workflow_section=_escape_format(workflow_section),
+        critical_constraints=_escape_format(critical_constraints),
         key_suffix=key_suffix,
     )
 
@@ -198,6 +203,32 @@ def _generate_fields_description(profile: dict) -> str:
     return "\n".join(lines)
 
 
+def _generate_critical_constraints(profile: dict, constraints: Optional[dict] = None) -> str:
+    all_constraints = []
+
+    if constraints:
+        for category, rules in constraints.items():
+            if isinstance(rules, dict):
+                for key, value in rules.items():
+                    all_constraints.append(f"🚫 **[{category}]** {key}: {value}")
+            elif isinstance(rules, str):
+                all_constraints.append(f"🚫 **[{category}]** {rules}")
+            elif isinstance(rules, list):
+                for item in rules:
+                    all_constraints.append(f"🚫 **[{category}]** {item}")
+
+    if not all_constraints:
+        return ""
+
+    lines = ["## 🚫 关键约束（必须遵守，违反任何约束都是不可接受的）", ""]
+    for c in all_constraints:
+        lines.append(c)
+    lines.append("")
+    lines.append("**以上约束来自模板原文，生成报告时必须严格遵守。不要以任何理由违反这些约束。**")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def _generate_sections_description(profile: dict) -> str:
     sections = profile.get("sections", [])
 
@@ -234,19 +265,16 @@ def _generate_sections_description(profile: dict) -> str:
             if cs_parts:
                 lines.append(f"  - 内容样式: {', '.join(cs_parts)}")
 
-        note = sec.get("note", "")
-        if note:
-            lines.append(f"  - 说明: {note}")
-
         requirements = sec.get("requirements", [])
-        for req in requirements:
-            req_type = req.get("type", "other")
-            desc = req.get("description", "")
-            value = req.get("value", "")
-            if value:
-                lines.append(f"  - 约束[{req_type}]: {desc} (值: {value})")
-            else:
-                lines.append(f"  - 约束[{req_type}]: {desc}")
+        if requirements:
+            for req in requirements:
+                req_type = req.get("type", "other")
+                desc = req.get("description", "")
+                value = req.get("value", "")
+                if value:
+                    lines.append(f"  - 🚫 约束[{req_type}]: {desc} (值: {value})")
+                else:
+                    lines.append(f"  - 🚫 约束[{req_type}]: {desc}")
 
     lines.append("")
     return "\n".join(lines)
@@ -314,7 +342,11 @@ def _generate_workflow(profile: dict, skill_name: str) -> str:
         for f in _deduplicate_fields(fields)
     )
 
-    has_course_step = any("课件" in s.get("note", "") or "course" in s.get("note", "").lower() for s in sections)
+    has_course_step = any(
+        any("课件" in r.get("description", "") or "course" in r.get("description", "").lower()
+            for r in s.get("requirements", []))
+        for s in sections
+    )
 
     workflow = """### 步骤1：获取用户信息
 - 检查项目根目录的`.env`文件获取个人信息（如STUDENT_ID, STUDENT_NAME, STUDENT_CLASS等）

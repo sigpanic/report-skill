@@ -89,16 +89,16 @@ def pydantic_model_to_ts(model_class: type[BaseModel]) -> str:
 
 def generate_all_ts_interfaces() -> str:
     from src.protocol.profile_schema import (
-        PageSetup, CoverTitle, CoverCollege, CoverField, CoverPage,
-        TableField, TableInfo, SectionStyle, ContentStyle, SectionRequirement, SectionInfo,
-        BodyTextStyle, SectionHeaderStyle, FormatRules,
+        PageSetup, CoverText, CoverField, CoverPage,
+        TableField, TableInfo, HeaderStyle, BodyTextStyle, ContentStyle, SectionRequirement, SectionInfo,
+        FormatRules,
         FieldEntry, TemplateProfile
     )
 
     models = [
-        PageSetup, CoverTitle, CoverCollege, CoverField, CoverPage,
-        TableField, TableInfo, SectionStyle, ContentStyle, SectionRequirement, SectionInfo,
-        BodyTextStyle, SectionHeaderStyle, FormatRules,
+        PageSetup, CoverText, CoverField, CoverPage,
+        TableField, TableInfo, HeaderStyle, BodyTextStyle, ContentStyle, SectionRequirement, SectionInfo,
+        FormatRules,
         FieldEntry, TemplateProfile
     ]
 

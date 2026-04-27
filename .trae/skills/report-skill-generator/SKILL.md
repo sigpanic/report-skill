@@ -40,7 +40,7 @@ description: "Generate Word documents from templates. Invoke when user wants to 
 
 ## 目录结构
 
-调用本Skill涉及的MCP工具时，需要传入凭据以确认你已阅读本文件。凭据分为两部分，本文件中包含前半部分：**RPT-GEN-2026**，后半部分在文件末尾。调用工具时请将两部分拼接后传入skill_key参数。
+调用本Skill涉及的MCP工具时，需要传入凭据以确认你已阅读本文件。凭据分为两部分，本文件中包含前半部分：**RPT-GEN-2026-**，后半部分在文件末尾。调用工具时请将两部分拼接后传入skill_key参数。
 
 特化时，在项目根目录创建以下目录结构：
 
@@ -103,6 +103,12 @@ mkdir -p {类别名称}/parsed
 ### 步骤5：生成特化Skill（自动注册）
 调用`generate_skill`工具，传入Profile路径、Skill名称和用户约束。
 Skill保存到类别目录（如`算法设计实验/algorithm_lab_report_skill.md`）。
+
+**⚠️ 全局约束必须通过constraints参数传入**：模板中适用于整篇报告的约束（如"不需要列程序源代码"、"不需要附源代码电子版"等），不应放在某个章节的requirements中，而应通过constraints参数传入。constraints是一个字典，key为约束类别，value为约束内容。例如：
+```json
+{"禁止内容": {"源代码": "报告中不需要列程序源代码", "附件": "不需要附源代码电子版"}, "格式要求": "所有图表必须编号"}
+```
+这些全局约束会在特化Skill的顶部「🚫 关键约束」区域醒目展示，确保生成报告时被遵守。
 
 **自动注册**：工具自动检测Agent框架目录（.trae/、.claude/、.cursor/、.cline/、.windsurf/、.roo/、.aider/、.continue/、.augment/、.kiro/等），将Skill注册到所有检测到的目录。无需单独注册步骤。
 - 如果检测到Agent目录 → Skill自动复制到每个Agent的skills目录

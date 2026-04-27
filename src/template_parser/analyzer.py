@@ -10,7 +10,7 @@ def _is_hint_format(fmt: dict) -> bool:
     if not fmt.get("italic"):
         return False
     color = fmt.get("font_color", "")
-    if color and color.upper().startswith("FF"):
+    if color and color.upper() in ("FF0000", "FF0000FF"):
         return True
     return False
 
@@ -57,7 +57,51 @@ def analyze_template_compact(template_path: str) -> dict:
         "content": []
     }
 
-    for elem in raw.get("elements", []):
+    for elem in raw.get("content", []):
+        if elem.get("type") == "table":
+            table_data = elem
+            table_compact = {
+                "type": "table",
+                "rows": table_data.get("rows", 0),
+                "cols": table_data.get("cols", 0),
+            }
+            if table_data.get("column_widths_cm"):
+                table_compact["col_widths"] = table_data["column_widths_cm"]
+
+            compact_cells = []
+            for cell in table_data.get("cells", []):
+                cell_info = {"r": cell["row"], "c": cell["col"]}
+                cell_text = cell.get("text", "").strip()
+                if cell_text:
+                    cell_info["text"] = cell_text
+                if cell.get("colspan"):
+                    cell_info["cs"] = cell["colspan"]
+                if cell.get("rowspan"):
+                    cell_info["rs"] = cell["rowspan"]
+
+                paras = cell.get("paragraphs", [])
+                cell_run_fmts = []
+                for p in paras:
+                    for r in p.get("runs", []):
+                        rtext = r.get("text", "")
+                        if not rtext:
+                            continue
+                        rfmt = extract_run_fmt(r)
+                        rfmt_id = get_fmt_id(rfmt)
+                        if rfmt_id:
+                            cell_run_fmts.append({"t": rtext, "f": rfmt_id})
+                        else:
+                            cell_run_fmts.append(rtext)
+
+                if cell_run_fmts:
+                    cell_info["runs"] = cell_run_fmts
+
+                compact_cells.append(cell_info)
+
+            table_compact["cells"] = compact_cells
+            compact["content"].append(table_compact)
+            continue
+
         text = elem.get("text", "").strip()
         runs = elem.get("runs", [])
 
@@ -92,48 +136,6 @@ def analyze_template_compact(template_path: str) -> dict:
             elem_compact["type"] = "p"
             compact["content"].append(elem_compact)
 
-    for table_data in raw.get("tables", []):
-        table_compact = {
-            "type": "table",
-            "rows": table_data.get("rows", 0),
-            "cols": table_data.get("cols", 0),
-        }
-        if table_data.get("column_widths_cm"):
-            table_compact["col_widths"] = table_data["column_widths_cm"]
-
-        compact_cells = []
-        for cell in table_data.get("cells", []):
-            cell_info = {"r": cell["row"], "c": cell["col"]}
-            cell_text = cell.get("text", "").strip()
-            if cell_text:
-                cell_info["text"] = cell_text
-            if cell.get("colspan"):
-                cell_info["cs"] = cell["colspan"]
-            if cell.get("rowspan"):
-                cell_info["rs"] = cell["rowspan"]
-
-            paras = cell.get("paragraphs", [])
-            cell_run_fmts = []
-            for p in paras:
-                for r in p.get("runs", []):
-                    rtext = r.get("text", "")
-                    if not rtext:
-                        continue
-                    rfmt = extract_run_fmt(r)
-                    rfmt_id = get_fmt_id(rfmt)
-                    if rfmt_id:
-                        cell_run_fmts.append({"t": rtext, "f": rfmt_id})
-                    else:
-                        cell_run_fmts.append(rtext)
-
-            if cell_run_fmts:
-                cell_info["runs"] = cell_run_fmts
-
-            compact_cells.append(cell_info)
-
-        table_compact["cells"] = compact_cells
-        compact["content"].append(table_compact)
-
     compact["formats"] = fmt_catalog
 
     _add_content_types(compact)
@@ -153,7 +155,16 @@ def _add_content_types(compact: dict):
 
     cover_field_count = 0
     found_title = False
+    found_first_section = False
     current_section = None
+
+    _FORMAT_NOTE_KEYWORDS = [
+        "字体", "字号", "行间距", "行距", "缩进", "首行缩进",
+        "格式要求", "报告格式", "排版", "版式", "段距", "段前", "段后",
+        "页边距", "页眉", "页脚", "页码", "字距", "字符间距",
+        "对齐方式", "加粗", "居中",
+        "font", "spacing", "indent", "margin", "format",
+    ]
 
     for item in content:
         if item.get("type") == "table":
@@ -163,27 +174,32 @@ def _add_content_types(compact: dict):
         text = item.get("text", "").strip()
         pf = item.get("pf", "")
         pf_info = fmt.get(pf, {})
+        runs = item.get("runs", [])
 
-        # cover spacer: empty text at the beginning
         if not text and not found_title:
             item["content_type"] = "cover_spacer"
             continue
 
-        # cover title: centered, large font, text "实  验  报  告"
-        if "实" in text and "验" in text and "报" in text and "告" in text:
-            item["content_type"] = "cover_title"
-            found_title = True
-            continue
+        if not found_title and len(text) <= 30:
+            max_font_size = 0
+            for r in runs:
+                if isinstance(r, dict):
+                    rf = fmt.get(r.get("f", ""), {})
+                    fs = rf.get("font_size_pt", 0)
+                    if fs and fs > max_font_size:
+                        max_font_size = fs
+            is_centered = pf_info.get("alignment") and "CENTER" in str(pf_info.get("alignment", "")).upper()
+            if max_font_size >= 16 or (not max_font_size and is_centered and not _COVER_FIELD_PATTERN.search(text) and not _SECTION_PATTERN.match(text)):
+                item["content_type"] = "cover_title"
+                found_title = True
+                continue
 
-        # college name line: centered non-empty text after cover fields, before sections
-        if text and not _SECTION_PATTERN.match(text) and "：" not in text and ":" not in text:
-            pf_info = fmt.get(item.get("pf", ""), {})
-            if pf_info.get("alignment") and "CENTER" in str(pf_info.get("alignment", "")).upper():
+        if not found_first_section and text and not _SECTION_PATTERN.match(text) and "：" not in text and ":" not in text:
+            pf_info2 = fmt.get(item.get("pf", ""), {})
+            if pf_info2.get("alignment") and "CENTER" in str(pf_info2.get("alignment", "")).upper():
                 item["content_type"] = "cover_college"
                 continue
 
-        # cover field: has colon character and underline in runs
-        runs = item.get("runs", [])
         has_underline = False
         has_colon = False
         for r in runs:
@@ -198,25 +214,31 @@ def _add_content_types(compact: dict):
             cover_field_count += 1
             continue
 
-        # section header
         if _SECTION_PATTERN.match(text):
             item["content_type"] = "section_title"
             current_section = text
+            found_first_section = True
             continue
 
-        # annotation note: italic and/or red
-        if pf_info.get("italic") or any(
+        has_italic = any(
             fmt.get(r.get("f", ""), {}).get("italic") for r in runs if isinstance(r, dict)
-        ):
+        )
+        has_red = False
+        for r in runs:
+            if isinstance(r, dict):
+                rf = fmt.get(r.get("f", ""), {})
+                color = rf.get("font_color", "")
+                if color and color.upper() in ("FF0000", "FF0000FF"):
+                    has_red = True
+                    break
+        if has_italic or has_red:
             item["content_type"] = "section_note"
             continue
 
-        # format specification note
-        if any(kw in text for kw in ["字体", "字号", "行间距", "缩进", "格式要求", "报告格式"]):
+        if any(kw in text.lower() for kw in _FORMAT_NOTE_KEYWORDS):
             item["content_type"] = "format_note"
             continue
 
-        # default: section body
         item["content_type"] = "section_body"
 
 
@@ -248,23 +270,22 @@ def check_profile_completeness(profile: dict, compact: dict) -> list:
         warnings.append("⚠️ sections为空！章节未识别")
 
     for section in sections:
-        if not section.get("note"):
-            has_italic = False
-            for elem in compact.get("content", []):
-                if elem.get("type") == "p" and elem.get("text", "").strip() == section.get("title", ""):
-                    next_idx = compact["content"].index(elem) + 1
-                    if next_idx < len(compact["content"]):
-                        next_elem = compact["content"][next_idx]
-                        next_runs = next_elem.get("runs", [])
-                        formats = compact.get("formats", {})
-                        for r in next_runs:
-                            if isinstance(r, dict):
-                                f = formats.get(r.get("f", ""), {})
-                                if f.get("italic"):
-                                    has_italic = True
-                    break
-            if has_italic:
-                warnings.append(f"⚠️ 章节 '{section.get('title', '')}' 后有斜体注释文本，但note为空")
+        has_italic = False
+        for idx, elem in enumerate(compact.get("content", [])):
+            if elem.get("type") == "p" and elem.get("text", "").strip() == section.get("title", ""):
+                next_idx = idx + 1
+                if next_idx < len(compact["content"]):
+                    next_elem = compact["content"][next_idx]
+                    next_runs = next_elem.get("runs", [])
+                    formats = compact.get("formats", {})
+                    for r in next_runs:
+                        if isinstance(r, dict):
+                            f = formats.get(r.get("f", ""), {})
+                            if f.get("italic"):
+                                has_italic = True
+                break
+        if has_italic and not section.get("requirements"):
+            warnings.append(f"⚠️ 章节 '{section.get('title', '')}' 后有斜体注释文本，但requirements为空！必须将注释中的约束提取到requirements数组中")
 
     format_rules = profile.get("format_rules", {})
     if not format_rules.get("body_text", {}).get("font_name"):
@@ -273,22 +294,30 @@ def check_profile_completeness(profile: dict, compact: dict) -> list:
         warnings.append("⚠️ format_rules.section_header.font_name未设置")
 
     for section in sections:
-        note = section.get("note", "")
         requirements = section.get("requirements", [])
-        if note and not requirements:
-            hints = []
-            if "不少于" in note or "至少" in note or "以上" in note:
-                hints.append("数量约束")
-            if "字体" in note or "font" in note.lower():
-                hints.append("字体要求")
-            if "表格" in note or "列" in note:
-                hints.append("表格结构")
-            if "截图" in note or "流程图" in note or "图" in note:
-                hints.append("内容要求")
-            if hints:
-                warnings.append(f"⚠️ 章节 '{section.get('title', '')}' 的note包含可能的约束（{', '.join(hints)}），但requirements为空。请检查是否需要提取约束")
+        if not requirements:
+            title = section.get("title", "")
+            for idx, elem in enumerate(compact.get("content", [])):
+                if elem.get("type") == "p" and elem.get("text", "").strip() == title:
+                    next_idx = idx + 1
+                    if next_idx < len(compact["content"]):
+                        next_text = compact["content"][next_idx].get("text", "")
+                        hints = []
+                        if "不少于" in next_text or "至少" in next_text or "以上" in next_text:
+                            hints.append("数量约束")
+                        if "字体" in next_text or "font" in next_text.lower():
+                            hints.append("字体要求")
+                        if "表格" in next_text or "列" in next_text:
+                            hints.append("表格结构")
+                        if "截图" in next_text or "流程图" in next_text or "图" in next_text:
+                            hints.append("内容要求")
+                        if "不需要" in next_text or "不要" in next_text or "禁止" in next_text or "不可" in next_text or "不能" in next_text or "无需" in next_text:
+                            hints.append("禁止内容")
+                        if hints:
+                            warnings.append(f"⚠️ 章节 '{title}' 后有注释文本包含约束（{', '.join(hints)}），但requirements为空！必须将约束提取到requirements数组中")
+                    break
 
-    compact_tables = compact.get("tables", [])
+    compact_tables = [e for e in compact.get("content", []) if e.get("type") == "table"]
     if compact_tables and not tables:
         warnings.append("⚠️ compact数据中有表格但Profile的tables为空！表格信息可能遗漏")
 
@@ -318,7 +347,7 @@ def get_analysis_guide() -> str:
 - 表格cells中`r`=行,`c`=列,`cs`=列跨,`rs`=行跨
 
 ## 分析步骤
-1. **识别封面页**: 文档开头，包含大字标题(font_size_pt>=30)、带冒号的标签字段
+1. **识别封面页**: 文档开头，包含大字标题(font_size_pt>=16)、带冒号的标签字段
 2. **识别表格字段**: 表格中左侧列通常是标签(如"实验名称")，右侧列是值区域。红色/斜体文本是提示
 3. **识别章节标题**: 加粗+编号的段落(如"一、实验目的"、"1. Introduction")
 4. **识别注释/说明**: 斜体(italic)、红色(font_color=FF0000)、含"删除"/"注"等关键词的段落
@@ -329,7 +358,9 @@ def get_analysis_guide() -> str:
    - **表格结构** (type="table_structure"): 如"表格需包含3列：方法、时间复杂度、空间复杂度" → description="表格需包含3列：方法、时间复杂度、空间复杂度"
    - **格式要求** (type="format"): 如"此部分首行缩进2字符"、"行间距固定值20磅" → description="此部分首行缩进2字符"
    - **内容要求** (type="content"): 如"需要包含算法流程图"、"需附运行结果截图" → description="需要包含算法流程图"
+   - **禁止内容** (type="forbidden"): 如"不需要列程序源代码"、"不要附源代码"、"禁止使用图片" → description="不需要列程序源代码"
    - **其他约束** (type="other"): 不属于以上类别的约束
+   ⚠️ **所有约束必须提取到requirements数组中。SectionInfo没有note字段——所有约束信息必须以结构化方式放入requirements。**
 7. **识别per-section内容样式**: 如果模板中某个章节有特殊的格式要求（如代码用等宽字体、摘要用楷体），在content_style中指定。content_style为空时使用全局body_text样式
 8. **识别隐式需求**: 约束不一定以独立段落出现，还可能隐藏在以下位置：
    - **章节标题中的括号内容**: 如"实验目的（不少于4个）" → 提取为min_count, value="4"
@@ -338,6 +369,10 @@ def get_analysis_guide() -> str:
    - **下划线区域的格式暗示**: 如封面下划线区域暗示此处需填写内容
    - **章节间的说明段落**: 如"以下各节均需包含运行结果截图" → 对后续每个章节添加content类型requirement
    - 识别到隐式需求后，同样提取到对应章节的requirements数组中
+9. **识别全局约束**: 模板中有些约束适用于整篇报告而非特定章节（如"报告中不需要列程序源代码"、"所有图表需编号"等）。这些全局约束不应放在某个章节的requirements中，而应在调用generate_skill时通过constraints参数传入。constraints是一个字典，key为约束类别，value为约束内容（字符串、字典或列表）。例如：
+   ```json
+   {{"禁止内容": {{"源代码": "报告中不需要列程序源代码", "附件": "不需要附源代码电子版"}}, "格式要求": "所有图表必须编号"}}
+   ```
 
 ## ⚠️ 必须严格按照以下TypeScript接口定义输出JSON
 以下接口定义由Pydantic模型自动生成，是数据结构的唯一标准：

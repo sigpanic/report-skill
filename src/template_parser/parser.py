@@ -80,8 +80,7 @@ def parse_template(template_path: str) -> dict:
 
     result = {
         "page_setup": _parse_page_setup(doc),
-        "elements": [],
-        "tables": [],
+        "content": [],
         "format_rules": {}
     }
 
@@ -91,9 +90,9 @@ def parse_template(template_path: str) -> dict:
     for element in doc.element.body:
         tag = element.tag.split('}')[-1] if '}' in element.tag else element.tag
         if tag == 'p' and element in para_map:
-            result["elements"].append(_parse_paragraph(para_map[element]))
+            result["content"].append(_parse_paragraph(para_map[element]))
         elif tag == 'tbl' and element in table_map:
-            result["tables"].append(_parse_table(table_map[element]))
+            result["content"].append(_parse_table(table_map[element]))
 
     result["format_rules"] = _extract_format_rules(result)
 
@@ -243,7 +242,7 @@ def _extract_format_rules(parsed: dict) -> dict:
     ]
 
     font_size_groups = {}
-    for elem in parsed["elements"]:
+    for elem in parsed["content"]:
         for run in elem.get("runs", []):
             fs = run.get("font_size_pt", 0)
             if fs > 0:
@@ -281,7 +280,9 @@ def _extract_format_rules(parsed: dict) -> dict:
         rules["section_header"]["bold"] = header_candidate[2]
 
     section_header_styles = []
-    for elem in parsed["elements"]:
+    for elem in parsed["content"]:
+        if elem.get("type") != "paragraph":
+            continue
         text = elem.get("text", "").strip()
         is_section = False
         for pattern in section_patterns:
@@ -325,7 +326,9 @@ def _extract_format_rules(parsed: dict) -> dict:
     space_before_values = []
     space_after_values = []
 
-    for elem in parsed["elements"]:
+    for elem in parsed["content"]:
+        if elem.get("type") != "paragraph":
+            continue
         if elem.get("line_spacing"):
             ls = elem["line_spacing"]
             if isinstance(ls, (int, float)) and ls > 0:

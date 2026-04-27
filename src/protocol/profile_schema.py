@@ -13,14 +13,7 @@ class PageSetup(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-class CoverTitle(BaseModel):
-    text: str
-    style: dict = Field(default_factory=dict)
-
-    model_config = {"extra": "forbid"}
-
-
-class CoverCollege(BaseModel):
+class CoverText(BaseModel):
     text: str
     style: dict = Field(default_factory=dict)
 
@@ -38,9 +31,9 @@ class CoverField(BaseModel):
 
 
 class CoverPage(BaseModel):
-    title: Optional[CoverTitle] = None
+    title: Optional[CoverText] = None
     fields: list[CoverField] = Field(default_factory=list)
-    college: Optional[CoverCollege] = None
+    college: Optional[CoverText] = None
 
     model_config = {"extra": "forbid"}
 
@@ -58,7 +51,6 @@ class TableField(BaseModel):
 
 
 class TableInfo(BaseModel):
-    index: int
     rows: int
     cols: int
     column_widths_cm: list[float] = Field(default_factory=list)
@@ -67,38 +59,10 @@ class TableInfo(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-class SectionStyle(BaseModel):
+class HeaderStyle(BaseModel):
     font_name: str
     font_size_pt: float
     bold: bool
-
-    model_config = {"extra": "forbid"}
-
-
-class ContentStyle(BaseModel):
-    font_name: str = ""
-    font_size_pt: float = 0
-    italic: bool = False
-    underline: bool = False
-    alignment: str = ""
-
-    model_config = {"extra": "forbid"}
-
-
-class SectionRequirement(BaseModel):
-    type: Literal["min_count", "font", "table_structure", "format", "content", "other"]
-    description: str
-    value: str = ""
-
-    model_config = {"extra": "forbid"}
-
-
-class SectionInfo(BaseModel):
-    title: str
-    style: SectionStyle
-    note: str = ""
-    content_style: Optional[ContentStyle] = None
-    requirements: list[SectionRequirement] = Field(default_factory=list)
 
     model_config = {"extra": "forbid"}
 
@@ -110,22 +74,41 @@ class BodyTextStyle(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-class SectionHeaderStyle(BaseModel):
-    font_name: str
-    font_size_pt: float
-    bold: bool
+class ContentStyle(BaseModel):
+    font_name: str = ""
+    font_size_pt: float = 0
+    italic: bool = False
+    underline: bool = False
+    alignment: Literal["LEFT", "CENTER", "RIGHT", "JUSTIFY", ""] = ""
+
+    model_config = {"extra": "forbid"}
+
+
+class SectionRequirement(BaseModel):
+    type: Literal["min_count", "font", "table_structure", "format", "content", "forbidden", "other"]
+    description: str
+    value: str = ""
+
+    model_config = {"extra": "forbid"}
+
+
+class SectionInfo(BaseModel):
+    title: str
+    style: HeaderStyle
+    content_style: Optional[ContentStyle] = None
+    requirements: list[SectionRequirement] = Field(default_factory=list)
 
     model_config = {"extra": "forbid"}
 
 
 class FormatRules(BaseModel):
     body_text: BodyTextStyle
-    section_header: SectionHeaderStyle
-    line_spacing_pt: int
+    section_header: HeaderStyle
+    line_spacing_pt: float
     first_line_indent_chars: int
-    space_before: int
-    space_after: int
-    image_width_cm: float = 12.0
+    space_before: float
+    space_after: float
+    image_width_cm: float = 0
     table_header_bg_color: str = ""
 
     model_config = {"extra": "forbid"}
@@ -216,13 +199,13 @@ def fix_profile_pydantic(data: dict) -> dict:
                     seen_keys.add(f["key"])
         tables = profile.get("tables", [])
         if isinstance(tables, list):
-            for t in tables:
+            for idx, t in enumerate(tables):
                 if isinstance(t, dict):
                     for f in t.get("fields", []):
                         if isinstance(f, dict) and f.get("key"):
-                            unique = f"{f['key']}_t{t.get('index', 0)}_{f.get('cell', '')}"
+                            unique = f"{f['key']}_t{idx}_{f.get('cell', '')}"
                             if unique not in seen_keys:
-                                all_fields.append({"source": f"table_{t.get('index', 0)}", **f})
+                                all_fields.append({"source": f"table_{idx}", **f})
                                 seen_keys.add(unique)
         profile["fields"] = all_fields
 

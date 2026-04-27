@@ -117,7 +117,13 @@ def _docx_to_doc(docx_path: str, doc_output_path: str) -> Optional[str]:
 def _fill_cover_fields(doc, profile: dict, field_values: dict):
     cover = profile.get("cover_page", {})
 
-    for para in doc.paragraphs:
+    all_paras = list(doc.paragraphs)
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                all_paras.extend(cell.paragraphs)
+
+    for para in all_paras:
         text = para.text.strip()
 
         for field in cover.get("fields", []):
@@ -204,11 +210,39 @@ def _replace_para_simple(para, label: str, value: str, field: dict):
 def _fill_table_fields(doc, profile: dict, field_values: dict):
     tables_profile = profile.get("tables", [])
 
+    profile_matched = set()
     for table_idx, table in enumerate(doc.tables):
-        if table_idx >= len(tables_profile):
-            break
+        best_match = -1
+        best_score = -1
+        for pi, tp in enumerate(tables_profile):
+            if pi in profile_matched:
+                continue
+            if len(table.rows) == tp.get("rows", 0) and len(table.columns) == tp.get("cols", 0):
+                score = 1
+                for field in tp.get("fields", []):
+                    cell_pos = field.get("cell", "").split(",")
+                    if len(cell_pos) == 2:
+                        try:
+                            r, c = int(cell_pos[0]), int(cell_pos[1])
+                            cell_text = table.cell(r, c).text.strip()
+                            if field.get("label", "") and cell_text == field["label"]:
+                                score += 2
+                            elif cell_text:
+                                score += 1
+                        except (IndexError, ValueError):
+                            pass
+                if score > best_score:
+                    best_score = score
+                    best_match = pi
 
-        table_profile = tables_profile[table_idx]
+        if best_match < 0:
+            if table_idx < len(tables_profile):
+                best_match = table_idx
+            else:
+                continue
+
+        profile_matched.add(best_match)
+        table_profile = tables_profile[best_match]
 
         for field in table_profile.get("fields", []):
             key = field.get("key", "")
@@ -343,7 +377,9 @@ def _insert_result_images_after(title_para, image_paths: list, format_rules: dic
 
         img_para = Paragraph(img_para_xml, title_para._element.getparent())
         img_run = img_para.add_run()
-        img_width = format_rules.get("image_width_cm", 12.0)
+        img_width = format_rules.get("image_width_cm") or 12.0
+        if img_width <= 0:
+            img_width = 12.0
         img_run.add_picture(img_path, width=Cm(img_width))
 
 
@@ -355,12 +391,30 @@ def _insert_section_content(title_para, content: str, images: list, content_tabl
     line_spacing_pt = format_rules.get("line_spacing_pt", 0)
     indent_chars = format_rules.get("first_line_indent_chars", 0)
     indent_cm = indent_chars * 0.42 if indent_chars else 0
+    space_before_pt = format_rules.get("space_before", 0)
+    space_after_pt = format_rules.get("space_after", 0)
     font_name_safe = xml_escape(font_name, {'"': '&quot;'})
     is_italic = content_style.get("italic", False) if content_style else False
     is_underline = content_style.get("underline", False) if content_style else False
-    alignment = content_style.get("alignment", "") if content_style else ""
+    alignment = (content_style.get("alignment", "") or "").upper() if content_style else ""
 
     insert_after = title_para._element
+    next_sib = insert_after.getnext()
+    while next_sib is not None:
+        next_tag = next_sib.tag.split('}')[-1] if '}' in next_sib.tag else next_sib.tag
+        if next_tag != 'p':
+            break
+        next_para = Paragraph(next_sib, title_para._element.getparent())
+        is_annotation = False
+        for run in next_para.runs:
+            if run.font.italic or _is_hint_run(run):
+                is_annotation = True
+                break
+        if is_annotation:
+            insert_after = next_sib
+            next_sib = next_sib.getnext()
+        else:
+            break
 
     if content:
         content_lines = content.split('\n')
@@ -407,21 +461,22 @@ def _insert_section_content(title_para, content: str, images: list, content_tabl
                     pf.first_line_indent = Cm(indent_cm)
                 if line_spacing_pt:
                     pf.line_spacing = Pt(line_spacing_pt)
-                pf.space_before = Pt(0)
-                pf.space_after = Pt(0)
-                if alignment == "center":
+                pf.space_before = Pt(space_before_pt)
+                pf.space_after = Pt(space_after_pt)
+                if alignment == "CENTER":
                     pf.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                elif alignment == "right":
+                elif alignment == "RIGHT":
                     pf.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-                elif alignment == "left":
+                elif alignment == "LEFT":
                     pf.alignment = WD_ALIGN_PARAGRAPH.LEFT
-                elif alignment == "justify":
+                elif alignment == "JUSTIFY":
                     pf.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 
     if content_tables:
         for table_data in content_tables:
             tbl_element = _create_table_element(table_data, font_name, font_size_pt,
-                                                  format_rules.get("table_header_bg_color", ""))
+                                                  format_rules.get("table_header_bg_color", ""),
+                                                  column_widths_cm=None)
             insert_after.addnext(tbl_element)
             insert_after = tbl_element
 
@@ -437,7 +492,9 @@ def _insert_section_content(title_para, content: str, images: list, content_tabl
 
                 img_para = Paragraph(img_para_xml, title_para._element.getparent())
                 img_run = img_para.add_run()
-                img_width = format_rules.get("image_width_cm", 12.0)
+                img_width = format_rules.get("image_width_cm") or 12.0
+                if img_width <= 0:
+                    img_width = 12.0
                 img_run.add_picture(img_path, width=Cm(img_width))
 
 
@@ -446,7 +503,13 @@ def _remove_annotations(doc, profile: dict):
     removal_patterns = profile.get("removal_patterns", [])
 
     paras_to_remove = []
-    for para in doc.paragraphs:
+    all_paras = list(doc.paragraphs)
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                all_paras.extend(cell.paragraphs)
+
+    for para in all_paras:
         p_element = para._element
         if p_element.get(qn('w:customXml')) == "ins":
             continue
@@ -478,7 +541,8 @@ def _remove_annotations(doc, profile: dict):
         p_element.getparent().remove(p_element)
 
 
-def _create_table_element(table_data: dict, font_name: str, font_size_pt: float, header_bg_color: str = ""):
+def _create_table_element(table_data: dict, font_name: str, font_size_pt: float, header_bg_color: str = "",
+                          column_widths_cm: list = None):
     headers = table_data.get("headers", [])
     rows = table_data.get("rows", [])
     num_cols = len(headers) if headers else (len(rows[0]) if rows else 0)
@@ -499,6 +563,13 @@ def _create_table_element(table_data: dict, font_name: str, font_size_pt: float,
     tbl_xml += f'<w:insideH w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
     tbl_xml += f'<w:insideV w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
     tbl_xml += f'</w:tblBorders><w:jc w:val="center"/></w:tblPr>'
+
+    if column_widths_cm:
+        tbl_xml += '<w:tblGrid>'
+        for w_cm in column_widths_cm:
+            w_twips = int(w_cm / 2.54 * 1440)
+            tbl_xml += f'<w:gridCol w:w="{w_twips}"/>'
+        tbl_xml += '</w:tblGrid>'
 
     if headers:
         tbl_xml += '<w:tr>'
