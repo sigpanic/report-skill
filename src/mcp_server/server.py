@@ -17,7 +17,7 @@ from src.protocol.schema import (
     ANALYZE_TEMPLATE_SCHEMA, GENERATE_REPORT_SCHEMA, GENERATE_SKILL_SCHEMA,
     PARSE_COURSE_SCHEMA, VERIFY_FORMAT_SCHEMA, SAVE_PROFILE_SCHEMA
 )
-from src.protocol.constants import GENERAL_KEY, AGENT_FRAMEWORKS, KEY_ERROR_GENERAL, KEY_ERROR_SPECIALIZED
+from src.protocol.constants import _G, AGENT_FRAMEWORKS, KEY_ERROR_GENERAL, KEY_ERROR_SPECIALIZED
 from src.template_parser.analyzer import analyze_template_compact, save_compact, get_analysis_guide, check_profile_completeness
 from src.template_parser.course_parser import parse_course_material
 from src.doc_generator.generator import generate_report
@@ -95,12 +95,16 @@ def _get_skill_cache():
     return _skill_file_cache
 
 
+def _normalize_key(k: str) -> str:
+    return k.strip().upper().replace("-", "")
+
+
 def _check_specialized_key(skill_key: str, category_dir: str = "") -> bool:
-    key_upper = skill_key.strip().upper()
-    if key_upper == GENERAL_KEY:
+    key_norm = _normalize_key(skill_key)
+    if key_norm == _normalize_key(_G):
         return False
 
-    key_parts = key_upper.split("-")
+    key_parts = skill_key.strip().upper().split("-")
     if len(key_parts) < 3:
         return False
 
@@ -184,7 +188,7 @@ async def list_tools() -> list[Tool]:
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     if name == "analyze_template":
         try:
-            if arguments.get("skill_key", "").strip().upper() != GENERAL_KEY:
+            if _normalize_key(arguments.get("skill_key", "")) != _normalize_key(_G):
                 return [TextContent(type="text", text=KEY_ERROR_GENERAL)]
 
             compact = analyze_template_compact(arguments["template_path"])
@@ -274,7 +278,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     elif name == "generate_skill":
         try:
-            if arguments.get("skill_key", "").strip().upper() != GENERAL_KEY:
+            if _normalize_key(arguments.get("skill_key", "")) != _normalize_key(_G):
                 return [TextContent(type="text", text=KEY_ERROR_GENERAL)]
 
             profile_path = arguments["profile_path"]
@@ -430,7 +434,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     elif name == "save_profile":
         try:
-            if arguments.get("skill_key", "").strip().upper() != GENERAL_KEY:
+            if _normalize_key(arguments.get("skill_key", "")) != _normalize_key(_G):
                 return [TextContent(type="text", text=KEY_ERROR_GENERAL)]
 
             profile_data = arguments["profile_json"]
