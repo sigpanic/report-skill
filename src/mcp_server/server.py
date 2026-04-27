@@ -256,6 +256,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             if not _has_skill_in_category(category_dir) and not _has_skill_registered(profile.get("template_path", "")):
                 return [TextContent(type="text", text=f"❌ 未找到对应的特化Skill。请先完成特化（调用generate_skill生成特化Skill），然后按Skill规定的工作流程生成报告。\n不要跳过Skill直接调用本工具。")]
 
+            env_path = os.path.join(PROJECT_ROOT, ".env")
+            if not os.path.exists(env_path):
+                print(f"⚠️ .env 文件不存在于 {PROJECT_ROOT}。建议创建.env文件，包含STUDENT_ID, STUDENT_NAME, STUDENT_CLASS等信息，以便自动填写封面字段。")
+
             output = generate_report(
                 template_path=template_path_arg,
                 output_path=arguments["output_path"],
@@ -288,6 +292,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             if not re.match(r'^[a-zA-Z0-9_\-\u4e00-\u9fff]+$', skill_name):
                 return [TextContent(type="text", text=f"❌ skill_name包含非法字符: {skill_name}。只允许字母、数字、下划线、连字符和中文。")]
             output_path = arguments["output_path"]
+
+            if os.path.isdir(output_path):
+                output_path = os.path.join(output_path, f"{skill_name}.md")
 
             output = generate_skill(
                 profile=profile,

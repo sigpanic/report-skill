@@ -212,7 +212,7 @@ def _fill_table_fields(doc, profile: dict, field_values: dict):
 
         for field in table_profile.get("fields", []):
             key = field.get("key", "")
-            value = field_values.get(key, "")
+            value = field_values.get(key, field.get("default", ""))
 
             if not value:
                 continue
@@ -291,7 +291,7 @@ def _is_hint_run(run) -> bool:
     return False
 
 
-def _fill_sections(doc, profile: dict, sections: list, result_images: list = None):
+def _fill_sections(doc, profile: dict, sections: list, result_images: Optional[list] = None):
     format_rules = profile.get("format_rules", {})
     section_map = {}
     for sec in sections:
@@ -348,7 +348,7 @@ def _insert_result_images_after(title_para, image_paths: list, format_rules: dic
 
 
 def _insert_section_content(title_para, content: str, images: list, content_tables: list,
-                            format_rules: dict, content_style: dict = None, requirements: list = None):
+                            format_rules: dict, content_style: Optional[dict] = None, requirements: Optional[list] = None):
     body_style = format_rules.get("body_text", {})
     font_name = content_style.get("font_name", "") if content_style and content_style.get("font_name") else body_style.get("font_name", "")
     font_size_pt = content_style.get("font_size_pt", 0) if content_style and content_style.get("font_size_pt") else body_style.get("font_size_pt", 0)
@@ -366,9 +366,18 @@ def _insert_section_content(title_para, content: str, images: list, content_tabl
         content_lines = content.split('\n')
         for line in content_lines:
             sz_val = int(font_size_pt * 2) if font_size_pt else 24
+            spacing_xml = ""
+            if line_spacing_pt:
+                ls_240ths = round(line_spacing_pt * 20)
+                spacing_xml = f'<w:spacing w:line="{ls_240ths}" w:lineRule="exact" w:before="0" w:after="0"/>'
+            indent_xml = ""
+            if indent_cm:
+                indent_twips = round(indent_cm / 2.54 * 1440)
+                indent_xml = f'<w:ind w:firstLine="{indent_twips}"/>'
             new_para_xml = parse_xml(
                 f'<w:p {nsdecls("w")}>'
                 f'<w:pPr>'
+                f'{spacing_xml}{indent_xml}'
                 f'<w:rPr><w:rFonts w:eastAsia="{font_name_safe}"/><w:sz w:val="{sz_val}"/></w:rPr>'
                 f'</w:pPr>'
                 f'</w:p>'

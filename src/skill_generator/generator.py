@@ -84,7 +84,7 @@ Profile JSON已就绪，本Skill指导你完成报告生成。
 - 模板中的注释和说明必须遵守
 - 输出文件后缀由工具自动保证（.doc模板→.doc输出，.docx→.docx）
 
-凭据后半部分：**{key_suffix}**。请与前半部分拼接后传入skill_key参数（如RPT-{skill_name}-2026-{key_suffix}）。
+凭据后半部分：**{key_suffix}**。请与前半部分拼接后传入skill_key参数。
 """
 
 

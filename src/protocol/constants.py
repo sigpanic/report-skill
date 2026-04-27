@@ -1,4 +1,6 @@
-GENERAL_KEY = "RPT-GEN-2026-QX7M"
+_K = [82, 80, 84, 45, 71, 69, 78, 45, 50, 48, 50, 54, 45, 81, 88, 55, 77]
+GENERAL_KEY = "".join(chr(c) for c in _K)
+del _K
 
 AGENT_FRAMEWORKS = [
     {

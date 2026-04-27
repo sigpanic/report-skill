@@ -253,12 +253,15 @@ def _verify_paragraphs(template_doc, generated_doc) -> list:
         t_runs = t_para.runs
         g_runs = g_para.runs
 
-        if t_runs and g_runs:
-            result["font_name_match"] = _compare_font_name(t_runs[0], g_runs[0])
-            result["font_size_match"] = _compare_font_size(t_runs[0], g_runs[0])
-            result["bold_match"] = t_runs[0].font.bold == g_runs[0].font.bold
-            result["italic_match"] = t_runs[0].font.italic == g_runs[0].font.italic
-            result["underline_match"] = t_runs[0].font.underline == g_runs[0].font.underline
+        result["run_count_match"] = len(t_runs) == len(g_runs)
+
+        min_runs = min(len(t_runs), len(g_runs))
+        for ri in range(min_runs):
+            result[f"run_{ri}_font_name_match"] = _compare_font_name(t_runs[ri], g_runs[ri])
+            result[f"run_{ri}_font_size_match"] = _compare_font_size(t_runs[ri], g_runs[ri])
+            result[f"run_{ri}_bold_match"] = t_runs[ri].font.bold == g_runs[ri].font.bold
+            result[f"run_{ri}_italic_match"] = t_runs[ri].font.italic == g_runs[ri].font.italic
+            result[f"run_{ri}_underline_match"] = t_runs[ri].font.underline == g_runs[ri].font.underline
 
         results.append(result)
 
@@ -301,6 +304,20 @@ def _verify_tables(template_doc, generated_doc) -> list:
             "rows_match": len(t_table.rows) == len(g_table.rows),
             "cols_match": len(t_table.columns) == len(g_table.columns),
         }
+
+        min_rows = min(len(t_table.rows), len(g_table.rows))
+        min_cols = min(len(t_table.columns), len(g_table.columns))
+        cell_mismatches = 0
+        for r in range(min_rows):
+            for c in range(min_cols):
+                try:
+                    t_text = t_table.cell(r, c).text.strip()
+                    g_text = g_table.cell(r, c).text.strip()
+                    if t_text and g_text != t_text:
+                        cell_mismatches += 1
+                except Exception:
+                    pass
+        result["cell_mismatch_count"] = cell_mismatches
 
         results.append(result)
 

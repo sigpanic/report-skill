@@ -51,6 +51,7 @@ class TableField(BaseModel):
     label: str
     type: Literal["table_cell"] = "table_cell"
     is_hint: bool = False
+    default: str = ""
     style: dict = Field(default_factory=dict)
 
     model_config = {"extra": "forbid"}
@@ -172,11 +173,24 @@ def validate_profile_pydantic(data: dict) -> dict:
         return {"valid": False, "errors": [str(e)], "profile": None}
 
 
+def _clean_section_content_styles(profile: dict):
+    sections = profile.get("sections", [])
+    if not isinstance(sections, list):
+        return
+    for sec in sections:
+        if not isinstance(sec, dict):
+            continue
+        cs = sec.get("content_style")
+        if cs is None:
+            sec.pop("content_style", None)
+
+
 def fix_profile_pydantic(data: dict) -> dict:
     result = validate_profile_pydantic(data)
     if result["valid"]:
         profile = result["profile"]
     else:
+        _clean_section_content_styles(data)
         profile = {
             "template_path": data.get("template_path", ""),
             "page_setup": data.get("page_setup", {}),
@@ -188,6 +202,8 @@ def fix_profile_pydantic(data: dict) -> dict:
             "removal_patterns": data.get("removal_patterns", []),
             "fields": data.get("fields", []),
         }
+
+    _clean_section_content_styles(profile)
 
     if not profile.get("fields"):
         all_fields = []

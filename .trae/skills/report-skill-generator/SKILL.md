@@ -1,6 +1,6 @@
 ---
 name: "report-skill-generator"
-description: "Analyzes Word templates and generates specialized report skills. Invoke when user provides a Word template and wants to create a report generation skill. NEVER invoke for course material parsing or report content generation."
+description: "Generate Word documents from templates. Invoke when user wants to create reports, lab reports, experiment reports, course reports, or any Word document based on a template. Handles template analysis, profile creation, skill specialization, course parsing, report generation, and format verification. Supports .doc and .docx templates."
 ---
 
 # 报告Skill生成器
@@ -16,6 +16,9 @@ description: "Analyzes Word templates and generates specialized report skills. I
 - 用户提供Word模板文件并要求生成报告Skill
 - 用户要求"特化"或"创建"报告生成Skill
 - 用户提供模板文件路径并说"分析模板"
+- 用户说"帮我写实验报告"、"生成报告"、"做实验报告"
+- 用户提到任何与Word模板报告相关的需求
+- 用户提供了.doc或.docx模板文件
 
 ## 何时不要激活
 
@@ -124,7 +127,7 @@ Parser(确定性解析) → compact数据 + TS接口定义 → LLM(语义理解)
 
 特化Skill生成后，其他Agent可以直接使用它生成报告，无需重新分析模板。
 
-凭据后半部分：**QX7M**。请与前半部分拼接后传入skill_key参数（如RPT-GEN-2026-QX7M）。
+凭据后半部分：**QX7M**。请与前半部分拼接后传入skill_key参数。
 
 ## 约束
 

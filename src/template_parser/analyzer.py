@@ -6,6 +6,15 @@ from src.template_parser.parser import parse_template
 from src.protocol.ts_generator import generate_all_ts_interfaces
 
 
+def _is_hint_format(fmt: dict) -> bool:
+    if not fmt.get("italic"):
+        return False
+    color = fmt.get("font_color", "")
+    if color and color.upper().startswith("FF"):
+        return True
+    return False
+
+
 def analyze_template_compact(template_path: str) -> dict:
     raw = parse_template(template_path)
 
@@ -62,8 +71,12 @@ def analyze_template_compact(template_path: str) -> dict:
             run_fmt = extract_run_fmt(run)
             run_fmt_id = get_fmt_id(run_fmt)
 
+            entry = {}
             if run_fmt_id:
-                compact_runs.append({"t": run_text, "f": run_fmt_id})
+                entry["f"] = run_fmt_id
+                if _is_hint_format(run_fmt):
+                    entry["hint"] = True
+                compact_runs.append({"t": run_text, **entry} if entry else run_text)
             else:
                 compact_runs.append(run_text)
 
@@ -123,7 +136,88 @@ def analyze_template_compact(template_path: str) -> dict:
 
     compact["formats"] = fmt_catalog
 
+    _add_content_types(compact)
+
     return compact
+
+
+_SECTION_PATTERN = re.compile(r'^[一二三四五六七八九十]+、')
+_COVER_FIELD_PATTERN = re.compile(r'[：:]')
+
+
+def _add_content_types(compact: dict):
+    fmt = compact.get("formats", {})
+    content = compact.get("content", [])
+    if not content:
+        return
+
+    cover_field_count = 0
+    found_title = False
+    current_section = None
+
+    for item in content:
+        if item.get("type") == "table":
+            item["content_type"] = "table"
+            continue
+
+        text = item.get("text", "").strip()
+        pf = item.get("pf", "")
+        pf_info = fmt.get(pf, {})
+
+        # cover spacer: empty text at the beginning
+        if not text and not found_title:
+            item["content_type"] = "cover_spacer"
+            continue
+
+        # cover title: centered, large font, text "实  验  报  告"
+        if "实" in text and "验" in text and "报" in text and "告" in text:
+            item["content_type"] = "cover_title"
+            found_title = True
+            continue
+
+        # college name line: centered non-empty text after cover fields, before sections
+        if text and not _SECTION_PATTERN.match(text) and "：" not in text and ":" not in text:
+            pf_info = fmt.get(item.get("pf", ""), {})
+            if pf_info.get("alignment") and "CENTER" in str(pf_info.get("alignment", "")).upper():
+                item["content_type"] = "cover_college"
+                continue
+
+        # cover field: has colon character and underline in runs
+        runs = item.get("runs", [])
+        has_underline = False
+        has_colon = False
+        for r in runs:
+            if isinstance(r, dict):
+                rf = fmt.get(r.get("f", ""), {})
+                if rf.get("underline"):
+                    has_underline = True
+                if "：" in r.get("t", "") or ":" in r.get("t", ""):
+                    has_colon = True
+        if has_colon and has_underline:
+            item["content_type"] = "cover_field"
+            cover_field_count += 1
+            continue
+
+        # section header
+        if _SECTION_PATTERN.match(text):
+            item["content_type"] = "section_title"
+            current_section = text
+            continue
+
+        # annotation note: italic and/or red
+        if pf_info.get("italic") or any(
+            fmt.get(r.get("f", ""), {}).get("italic") for r in runs if isinstance(r, dict)
+        ):
+            item["content_type"] = "section_note"
+            continue
+
+        # format specification note
+        if any(kw in text for kw in ["字体", "字号", "行间距", "缩进", "格式要求", "报告格式"]):
+            item["content_type"] = "format_note"
+            continue
+
+        # default: section body
+        item["content_type"] = "section_body"
 
 
 def check_profile_completeness(profile: dict, compact: dict) -> list:
@@ -208,8 +302,19 @@ def get_analysis_guide() -> str:
 ## 数据格式说明
 - `formats`: 格式目录，键为格式ID(如f1,f2)，值为格式属性
 - `content`: 内容数组，每项type为"p"(段落)或"table"(表格)
+- 每个内容项已自动标注`content_type`字段，帮助你快速理解其语义角色：
+  - `cover_spacer` — 封面空白段落
+  - `cover_title` — 封面标题（如"实  验  报  告"）
+  - `cover_field` — 封面字段行（如"学生姓名："）
+  - `cover_college` — 学院名称
+  - `section_title` — 章节标题（如"一、实验目的"）
+  - `section_note` — 斜体/红色注释说明段落（会被自动删除）
+  - `format_note` — 格式要求说明段落（会被自动删除）
+  - `section_body` — 正文引导段落
+  - `table` — 表格
 - 段落中`pf`引用段落格式，runs中`f`引用run格式
 - runs中的字符串表示纯文本(无特殊格式)
+- 红色斜体运行的run条目已自动标注`"hint": true`，表示这是提示/注释文本
 - 表格cells中`r`=行,`c`=列,`cs`=列跨,`rs`=行跨
 
 ## 分析步骤
