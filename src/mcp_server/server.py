@@ -9,6 +9,7 @@ if __name__ == "__main__":
     if _project_root not in sys.path:
         sys.path.insert(0, _project_root)
 
+from dotenv import load_dotenv
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
@@ -27,6 +28,35 @@ from src.protocol.profile_schema import validate_profile_pydantic, fix_profile_p
 from src.protocol.ts_generator import generate_all_ts_interfaces
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+_ENV_WHITELIST = {
+    "STUDENT_ID": "student_id",
+    "STUDENT_NAME": "student_name",
+    "STUDENT_CLASS": "student_class",
+}
+
+load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
+
+
+def _get_env_info() -> str:
+    parts = []
+    for env_key, field_key in _ENV_WHITELIST.items():
+        val = os.environ.get(env_key, "")
+        if val:
+            parts.append(f"{field_key}={val}")
+    if parts:
+        return ".env 已自动加载: " + ", ".join(parts)
+    return ".env 文件不存在或无有效内容 — 个人信息需要询问用户"
+
+
+def _auto_fill_from_env(field_values: dict) -> dict:
+    filled = dict(field_values)
+    for env_key, field_key in _ENV_WHITELIST.items():
+        if field_key not in filled or not filled.get(field_key):
+            env_val = os.environ.get(env_key, "")
+            if env_val:
+                filled[field_key] = env_val
+    return filled
 
 _skill_file_cache = None
 _skill_file_cache_mtime = 0
@@ -214,6 +244,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             with open(guide_path, 'w', encoding='utf-8') as f:
                 f.write(guide)
 
+            env_info = _get_env_info()
+            # toagent: 此处必须保持中文，严禁改成英文
             result_text = f"""模板分析完成，数据已保存到文件。
 
 ## 文件路径
@@ -226,7 +258,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 3. 你必须根据compact数据和TS接口定义，自己编写TemplateProfile JSON
 4. 编写完成后调用save_profile保存（自动Pydantic校验+代码辅助检查+补全fields）
 5. 如果save_profile返回警告，请检查是否需要修正
-6. **不读取完整文件将导致Profile编写错误，Pydantic校验会拒绝执行**"""
+6. **不读取完整文件将导致Profile编写错误，Pydantic校验会拒绝执行**
+
+{env_info}"""
 
             return [TextContent(type="text", text=result_text)]
         except Exception as e:
@@ -265,19 +299,18 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             if not _has_skill_in_category(category_dir) and not _has_skill_registered(profile.get("template_path", "")):
                 return [TextContent(type="text", text=f"❌ 未找到对应的特化Skill。请先完成特化（调用generate_skill生成特化Skill），然后按Skill规定的工作流程生成报告。\n不要跳过Skill直接调用本工具。")]
 
-            env_path = os.path.join(PROJECT_ROOT, ".env")
-            if not os.path.exists(env_path):
-                print(f"⚠️ .env 文件不存在于 {PROJECT_ROOT}。建议创建.env文件，包含STUDENT_ID, STUDENT_NAME, STUDENT_CLASS等信息，以便自动填写封面字段。")
-
+            field_values = _auto_fill_from_env(arguments.get("field_values", {}))
+            env_info = _get_env_info()
+            # toagent: 此处必须保持中文，严禁改成英文
             output = generate_report(
                 template_path=template_path_arg,
                 output_path=arguments["output_path"],
                 profile=profile,
-                field_values=arguments["field_values"],
+                field_values=field_values,
                 sections=arguments["sections"],
                 result_images=arguments.get("result_images")
             )
-            return [TextContent(type="text", text=f"报告已生成: {output}")]
+            return [TextContent(type="text", text=f"报告已生成: {output}\n\n{env_info}")]
         except Exception as e:
             return [TextContent(type="text", text=f"生成失败: {str(e)}")]
 
@@ -349,7 +382,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
             _build_skill_content_cache()
 
-            result = f"✅ 特化Skill已生成: {output}\n"
+            env_info = _get_env_info()
+            # toagent: 此处必须保持中文，严禁改成英文
+            result = f"✅ 特化Skill已生成: {output}\n\n{env_info}\n"
 
             if registered:
                 result += "\nSkill已自动注册到以下Agent目录：\n"

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "report-skill-generator": {
+      "command": "c:\\Users\\20598\\Desktop\\project\\glm\\.venv\\Scripts\\python.exe",
+      "args": ["c:\\Users\\20598\\Desktop\\project\\glm\\src\\mcp_server\\server.py"],
+      "cwd": "c:\\Users\\20598\\Desktop\\project\\glm"
+    }
+  }
+}

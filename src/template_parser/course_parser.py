@@ -113,7 +113,8 @@ def _parse_ppt(file_path: str, enable_ocr: bool = True) -> dict:
     try:
         import win32com.client
         powerpoint = win32com.client.Dispatch("PowerPoint.Application")
-        powerpoint.Visible = 1
+        powerpoint.Visible = False
+        powerpoint.DisplayAlerts = False
 
         abs_path = os.path.abspath(file_path)
         presentation = powerpoint.Presentations.Open(abs_path)

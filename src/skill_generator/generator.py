@@ -361,6 +361,7 @@ def _generate_constraints_description(constraints: Optional[dict]) -> str:
 
 
 def _generate_workflow(profile: dict, skill_name: str) -> str:
+    # toagent: 此处必须保持中文，严禁改成英文
     sections = profile.get("sections", [])
     fields = profile.get("fields", [])
 
@@ -377,39 +378,30 @@ def _generate_workflow(profile: dict, skill_name: str) -> str:
         for s in sections
     )
 
-    workflow = """### 步骤1：获取用户信息
-- 检查项目根目录的`.env`文件获取个人信息（如STUDENT_ID, STUDENT_NAME, STUDENT_CLASS等）
-- 如果.env中存在对应信息，直接使用，不需要询问用户
-- .env中不存在的字段值才需要询问用户
-
-### 步骤2：创建输出目录
+    workflow = """### 步骤1：创建输出目录
 - 在类别目录下创建本次报告的子目录
 - 生成的报告和相关文件输出到该子目录
-"""
-    if has_course_step:
-        workflow += """
-### 步骤3：读取课件（如有）
+
+### 步骤2：读取课件（如有）
 - 如果用户提供了课件文件，调用`parse_course_material`解析课件
 - 解析结果默认保存在课件所在目录
 - 根据课件内容理解报告要求
 - 如果没有课件，根据用户描述理解要求
-"""
 
-    workflow += f"""
-### 步骤{4 if has_course_step else 3}：准备内容
+### 步骤3：准备内容
 - 根据课件/资料内容，准备各章节的文字内容
 - 章节列表：
 {section_list}
 - 每个章节的内容必须遵守上方"各章节要求"中的说明
 - 内容风格应自然，避免AI感
 
-### 步骤{5 if has_course_step else 4}：准备字段值
+### 步骤4：准备字段值
 - 收集所有需要填写的字段：
 {field_list}
-- 优先使用.env中的信息
-- 不确定的字段值必须询问用户
+- 个人信息（姓名、学号、班级）由系统自动从.env填充，无需询问用户
+- 其他字段优先使用Profile中的默认值，不确定的询问用户
 
-### 步骤{6 if has_course_step else 5}：调用MCP工具生成文档
+### 步骤5：调用MCP工具生成文档
 - 调用 generate_report 工具，传入：
   - template_path: 模板文件路径
   - output_path: 输出路径（后缀由工具自动处理）
@@ -418,7 +410,7 @@ def _generate_workflow(profile: dict, skill_name: str) -> str:
   - sections: 章节内容数组
 - sections数组中每项的title必须与Profile中的section title完全匹配
 
-### 步骤{7 if has_course_step else 6}：验证输出
+### 步骤6：验证输出
 - 调用 verify_format 工具验证格式一致性
 - 检查所有字段是否正确填充
 - 如果格式不一致，分析原因并修正"""

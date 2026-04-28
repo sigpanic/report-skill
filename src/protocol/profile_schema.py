@@ -157,6 +157,7 @@ class TemplateProfile(BaseModel):
 
 def validate_profile_pydantic(data: dict) -> dict:
     try:
+        data = {k: v for k, v in data.items() if k != "fields"}
         profile = TemplateProfile.model_validate(data)
         return {"valid": True, "errors": [], "profile": profile.model_dump()}
     except ValidationError as e:

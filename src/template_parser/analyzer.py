@@ -7,8 +7,8 @@ from src.protocol.ts_generator import generate_all_ts_interfaces
 
 
 def _is_hint_format(fmt: dict) -> bool:
-    if not fmt.get("italic"):
-        return False
+    if fmt.get("italic"):
+        return True
     color = fmt.get("font_color", "")
     if color and color.upper() in ("FF0000", "FF0000FF"):
         return True
@@ -126,7 +126,11 @@ def analyze_template_compact(template_path: str) -> dict:
 
             is_hint = run_fmt_id and _is_hint_format(run_fmt)
 
-            if compact_runs and compact_runs[-1].get("f") == run_fmt_id and compact_runs[-1].get("hint") == is_hint:
+            is_trailing_space = run_text.strip() == "" and not run.get("underline") and not is_hint
+            if is_trailing_space and compact_runs:
+                continue
+
+            if compact_runs and compact_runs[-1].get("f") == run_fmt_id and bool(compact_runs[-1].get("hint")) == bool(is_hint):
                 compact_runs[-1]["t"] += run_text
             else:
                 entry = {}
@@ -142,7 +146,13 @@ def analyze_template_compact(template_path: str) -> dict:
         if para_fmt_id:
             elem_compact["pf"] = para_fmt_id
         if compact_runs:
-            elem_compact["runs"] = compact_runs
+            if len(compact_runs) == 1 and compact_runs[0].get("t", "").strip() == text and not compact_runs[0].get("hint"):
+                pass
+            else:
+                elem_compact["runs"] = compact_runs
+
+        if not text and not compact_runs:
+            continue
 
         if elem_compact:
             elem_compact["type"] = "p"
@@ -301,7 +311,17 @@ def _add_structure_summary(compact: dict):
     compact["_summary"] = summary
 
 
+def _find_next_non_blank(compact: dict, start_idx: int) -> dict:
+    content = compact.get("content", [])
+    for i in range(start_idx, len(content)):
+        item = content[i]
+        if item.get("type") == "p" and item.get("text", "").strip():
+            return item
+    return {}
+
+
 def check_profile_completeness(profile: dict, compact: dict) -> list:
+    # toagent: 此处必须保持中文，严禁改成英文
     warnings = []
 
     if not profile.get("annotation_patterns"):
@@ -329,21 +349,23 @@ def check_profile_completeness(profile: dict, compact: dict) -> list:
         warnings.append("⚠️ sections为空！章节未识别")
 
     for section in sections:
-        has_italic = False
+        has_annotation = False
         for idx, elem in enumerate(compact.get("content", [])):
             if elem.get("type") == "p" and elem.get("text", "").strip() == section.get("title", ""):
-                next_idx = idx + 1
-                if next_idx < len(compact["content"]):
-                    next_elem = compact["content"][next_idx]
+                next_elem = _find_next_non_blank(compact, idx + 1)
+                if next_elem:
                     next_runs = next_elem.get("runs", [])
                     formats = compact.get("formats", {})
                     for r in next_runs:
                         if isinstance(r, dict):
                             f = formats.get(r.get("f", ""), {})
                             if f.get("italic"):
-                                has_italic = True
+                                has_annotation = True
+                            color = f.get("font_color", "")
+                            if color and color.upper() in ("FF0000", "FF0000FF"):
+                                has_annotation = True
                 break
-        if has_italic and not section.get("requirements"):
+        if has_annotation and not section.get("requirements"):
             warnings.append(f"⚠️ 章节 '{section.get('title', '')}' 后有斜体注释文本，但requirements为空！必须将注释中的约束提取到requirements数组中")
 
     format_rules = profile.get("format_rules", {})
@@ -358,9 +380,9 @@ def check_profile_completeness(profile: dict, compact: dict) -> list:
             title = section.get("title", "")
             for idx, elem in enumerate(compact.get("content", [])):
                 if elem.get("type") == "p" and elem.get("text", "").strip() == title:
-                    next_idx = idx + 1
-                    if next_idx < len(compact["content"]):
-                        next_text = compact["content"][next_idx].get("text", "")
+                    next_elem = _find_next_non_blank(compact, idx + 1)
+                    if next_elem:
+                        next_text = next_elem.get("text", "")
                         hints = []
                         if "不少于" in next_text or "至少" in next_text or "以上" in next_text:
                             hints.append("数量约束")
@@ -384,6 +406,7 @@ def check_profile_completeness(profile: dict, compact: dict) -> list:
 
 
 def get_analysis_guide() -> str:
+    # toagent: 此处必须保持中文，严禁改成英文
     ts_interfaces = generate_all_ts_interfaces()
     return f"""请根据以上compact数据，分析模板结构并编写TemplateProfile JSON。
 

@@ -41,7 +41,7 @@ GENERATE_REPORT_SCHEMA = {
             },
             "field_values": {
                 "type": "object",
-                "description": "字段值字典，key对应Profile中的field key，value为要填入的值",
+                "description": "字段值字典，key对应Profile中的field key，value为要填入的值。已知的env字段（student_id, student_name, student_class）若未提供会自动从.env填充。",
                 "additionalProperties": {"type": "string"}
             },
             "sections": {

@@ -429,10 +429,6 @@ def _insert_section_content(title_para, content: str, images: list, content_tabl
         content_lines = content.split('\n')
         for line in content_lines:
             sz_val = int(font_size_pt * 2) if font_size_pt else 24
-            spacing_xml = ""
-            if line_spacing_pt:
-                ls_240ths = round(line_spacing_pt * 20)
-                spacing_xml = f'<w:spacing w:line="{ls_240ths}" w:lineRule="exact" w:before="0" w:after="0"/>'
             indent_xml = ""
             if indent_cm:
                 indent_twips = round(indent_cm / 2.54 * 1440)
@@ -440,7 +436,7 @@ def _insert_section_content(title_para, content: str, images: list, content_tabl
             new_para_xml = parse_xml(
                 f'<w:p {nsdecls("w")}>'
                 f'<w:pPr>'
-                f'{spacing_xml}{indent_xml}'
+                f'{indent_xml}'
                 f'<w:rPr><w:rFonts w:eastAsia="{font_name_safe}"/><w:sz w:val="{sz_val}"/></w:rPr>'
                 f'</w:pPr>'
                 f'</w:p>'
