@@ -139,8 +139,16 @@ def _fill_cover_fields(doc, profile: dict, field_values: dict):
                 _replace_cover_field_run_level(para, label, value, field)
                 break
 
+            if not label and field.get("default") and text == field["default"]:
+                for run in para.runs:
+                    if run.text.strip():
+                        run.text = value
+                break
+
 
 def _fuzzy_match_label(text: str, label: str) -> bool:
+    if not label:
+        return False
     text_clean = re.sub(r'\s+', '', text)
     label_clean = re.sub(r'\s+', '', label)
     return text_clean.startswith(label_clean)
@@ -607,7 +615,7 @@ def _ensure_header_footer(doc, profile: dict):
     if not doc.sections:
         return
 
-    for section_info in hf.get("header", []) + hf.get("footer", []):
+    for section_info in hf.get("sections", []):
         idx = section_info.get("section_index", 0)
         if idx >= len(doc.sections):
             continue

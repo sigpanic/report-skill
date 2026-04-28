@@ -17,14 +17,15 @@ class HeaderFooterSection(BaseModel):
     section_index: int = 0
     header_text: list[str] = Field(default_factory=list)
     footer_text: list[str] = Field(default_factory=list)
+    first_page_header_text: list[str] = Field(default_factory=list)
+    first_page_footer_text: list[str] = Field(default_factory=list)
     different_first_page: bool = False
 
     model_config = {"extra": "forbid"}
 
 
 class HeaderFooter(BaseModel):
-    header: list[HeaderFooterSection] = Field(default_factory=list)
-    footer: list[HeaderFooterSection] = Field(default_factory=list)
+    sections: list[HeaderFooterSection] = Field(default_factory=list)
 
     model_config = {"extra": "forbid"}
 
@@ -190,6 +191,7 @@ def fix_profile_pydantic(data: dict) -> dict:
         profile = {
             "template_path": data.get("template_path", ""),
             "page_setup": data.get("page_setup", {}),
+            "header_footer": data.get("header_footer", {}),
             "cover_page": data.get("cover_page", {}),
             "tables": data.get("tables", []),
             "sections": data.get("sections", []),

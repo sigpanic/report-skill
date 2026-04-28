@@ -118,38 +118,56 @@ def _parse_page_setup(doc) -> dict:
 
 
 def _parse_header_footer(doc) -> dict:
-    result = {"header": [], "footer": []}
+    result = []
     if not doc.sections:
-        return result
+        return {"sections": result}
 
     for section_idx, section in enumerate(doc.sections):
         section_info = {"section_index": section_idx}
 
+        header_texts = []
         if section.header and not section.header.is_linked_to_previous:
-            header_texts = []
             for para in section.header.paragraphs:
                 text = para.text.strip()
                 if text:
                     header_texts.append(text)
-            if header_texts:
-                section_info["header_text"] = header_texts
 
+        footer_texts = []
         if section.footer and not section.footer.is_linked_to_previous:
-            footer_texts = []
             for para in section.footer.paragraphs:
                 text = para.text.strip()
                 if text:
                     footer_texts.append(text)
-            if footer_texts:
-                section_info["footer_text"] = footer_texts
 
+        first_header_texts = []
+        if section.first_page_header and not section.first_page_header.is_linked_to_previous:
+            for para in section.first_page_header.paragraphs:
+                text = para.text.strip()
+                if text:
+                    first_header_texts.append(text)
+
+        first_footer_texts = []
+        if section.first_page_footer and not section.first_page_footer.is_linked_to_previous:
+            for para in section.first_page_footer.paragraphs:
+                text = para.text.strip()
+                if text:
+                    first_footer_texts.append(text)
+
+        if header_texts:
+            section_info["header_text"] = header_texts
+        if footer_texts:
+            section_info["footer_text"] = footer_texts
+        if first_header_texts:
+            section_info["first_page_header_text"] = first_header_texts
+        if first_footer_texts:
+            section_info["first_page_footer_text"] = first_footer_texts
         if section.different_first_page_header_footer:
             section_info["different_first_page"] = True
 
         if len(section_info) > 1:
-            result["header" if "header_text" in section_info else "footer"].append(section_info)
+            result.append(section_info)
 
-    return result
+    return {"sections": result}
 
 
 def _alignment_to_str(alignment) -> Optional[str]:
