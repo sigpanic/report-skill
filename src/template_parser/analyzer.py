@@ -53,6 +53,7 @@ def analyze_template_compact(template_path: str) -> dict:
 
     compact = {
         "page_setup": raw.get("page_setup", {}),
+        "header_footer": raw.get("header_footer", {}),
         "formats": fmt_catalog,
         "content": []
     }
@@ -88,10 +89,18 @@ def analyze_template_compact(template_path: str) -> dict:
                             continue
                         rfmt = extract_run_fmt(r)
                         rfmt_id = get_fmt_id(rfmt)
-                        if rfmt_id:
-                            cell_run_fmts.append({"t": rtext, "f": rfmt_id})
+                        is_hint = rfmt_id and _is_hint_format(rfmt)
+
+                        if cell_run_fmts and isinstance(cell_run_fmts[-1], dict) and cell_run_fmts[-1].get("f") == rfmt_id and cell_run_fmts[-1].get("hint") == is_hint:
+                            cell_run_fmts[-1]["t"] += rtext
                         else:
-                            cell_run_fmts.append(rtext)
+                            if rfmt_id:
+                                entry = {"t": rtext, "f": rfmt_id}
+                                if is_hint:
+                                    entry["hint"] = True
+                                cell_run_fmts.append(entry)
+                            else:
+                                cell_run_fmts.append({"t": rtext})
 
                 if cell_run_fmts:
                     cell_info["runs"] = cell_run_fmts
@@ -115,14 +124,17 @@ def analyze_template_compact(template_path: str) -> dict:
             run_fmt = extract_run_fmt(run)
             run_fmt_id = get_fmt_id(run_fmt)
 
-            entry = {}
-            if run_fmt_id:
-                entry["f"] = run_fmt_id
-                if _is_hint_format(run_fmt):
-                    entry["hint"] = True
-                compact_runs.append({"t": run_text, **entry} if entry else run_text)
+            is_hint = run_fmt_id and _is_hint_format(run_fmt)
+
+            if compact_runs and compact_runs[-1].get("f") == run_fmt_id and compact_runs[-1].get("hint") == is_hint:
+                compact_runs[-1]["t"] += run_text
             else:
-                compact_runs.append(run_text)
+                entry = {}
+                if run_fmt_id:
+                    entry["f"] = run_fmt_id
+                    if is_hint:
+                        entry["hint"] = True
+                compact_runs.append({"t": run_text, **entry} if entry else {"t": run_text})
 
         elem_compact = {}
         if text:
@@ -139,6 +151,7 @@ def analyze_template_compact(template_path: str) -> dict:
     compact["formats"] = fmt_catalog
 
     _add_content_types(compact)
+    _add_structure_summary(compact)
 
     return compact
 
@@ -242,6 +255,52 @@ def _add_content_types(compact: dict):
         item["content_type"] = "section_body"
 
 
+def _add_structure_summary(compact: dict):
+    content = compact.get("content", [])
+    fmt = compact.get("formats", {})
+
+    cover_title = ""
+    cover_fields = []
+    cover_college = ""
+    sections = []
+    tables_count = 0
+    notes_count = 0
+
+    for item in content:
+        ct = item.get("content_type", "")
+        if ct == "cover_title":
+            cover_title = item.get("text", "")
+        elif ct == "cover_field":
+            text = item.get("text", "")
+            label = ""
+            for r in item.get("runs", []):
+                if isinstance(r, dict):
+                    rt = r.get("t", "")
+                    if "：" in rt or ":" in rt:
+                        label = rt
+                        break
+            cover_fields.append(label or text)
+        elif ct == "cover_college":
+            cover_college = item.get("text", "")
+        elif ct == "section_title":
+            sections.append(item.get("text", ""))
+        elif ct == "table":
+            tables_count += 1
+        elif ct in ("section_note", "format_note"):
+            notes_count += 1
+
+    summary = {
+        "cover_title": cover_title,
+        "cover_fields": cover_fields,
+        "cover_college": cover_college,
+        "sections": sections,
+        "tables_count": tables_count,
+        "notes_count": notes_count,
+    }
+
+    compact["_summary"] = summary
+
+
 def check_profile_completeness(profile: dict, compact: dict) -> list:
     warnings = []
 
@@ -328,6 +387,17 @@ def get_analysis_guide() -> str:
     ts_interfaces = generate_all_ts_interfaces()
     return f"""请根据以上compact数据，分析模板结构并编写TemplateProfile JSON。
 
+## 📋 模板结构概览（_summary字段）
+compact数据中的`_summary`字段已自动提取模板的核心结构，你可以直接参考它快速了解模板：
+- `cover_title`: 封面标题文本
+- `cover_fields`: 封面字段标签列表（如["实验课程：", "学生姓名："]）
+- `cover_college`: 学院/学校名称
+- `sections`: 章节标题列表（如["一、实验目的", "二、实验环境"]）
+- `tables_count`: 表格数量
+- `notes_count`: 注释/说明段落数量
+
+⚠️ _summary仅供参考，你仍需仔细阅读content数组中的详细数据来提取格式、约束等细节信息。
+
 ## 数据格式说明
 - `formats`: 格式目录，键为格式ID(如f1,f2)，值为格式属性
 - `content`: 内容数组，每项type为"p"(段落)或"table"(表格)
@@ -345,6 +415,7 @@ def get_analysis_guide() -> str:
 - runs中的字符串表示纯文本(无特殊格式)
 - 红色斜体运行的run条目已自动标注`"hint": true`，表示这是提示/注释文本
 - 表格cells中`r`=行,`c`=列,`cs`=列跨,`rs`=行跨
+- `header_footer`: 页眉页脚信息，包含header和footer数组，每个条目有section_index、header_text/footer_text、different_first_page
 
 ## 分析步骤
 1. **识别封面页**: 文档开头，包含大字标题(font_size_pt>=16)、带冒号的标签字段

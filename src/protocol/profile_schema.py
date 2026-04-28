@@ -13,6 +13,22 @@ class PageSetup(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class HeaderFooterSection(BaseModel):
+    section_index: int = 0
+    header_text: list[str] = Field(default_factory=list)
+    footer_text: list[str] = Field(default_factory=list)
+    different_first_page: bool = False
+
+    model_config = {"extra": "forbid"}
+
+
+class HeaderFooter(BaseModel):
+    header: list[HeaderFooterSection] = Field(default_factory=list)
+    footer: list[HeaderFooterSection] = Field(default_factory=list)
+
+    model_config = {"extra": "forbid"}
+
+
 class CoverText(BaseModel):
     text: str
 
@@ -127,6 +143,7 @@ class FieldEntry(BaseModel):
 class TemplateProfile(BaseModel):
     template_path: str
     page_setup: PageSetup
+    header_footer: HeaderFooter = Field(default_factory=HeaderFooter)
     cover_page: CoverPage
     tables: list[TableInfo] = Field(default_factory=list)
     sections: list[SectionInfo] = Field(default_factory=list)

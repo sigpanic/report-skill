@@ -58,6 +58,7 @@ def generate_report(
         _fill_table_fields(doc, profile, field_values)
         _fill_sections(doc, profile, sections, result_images)
         _remove_annotations(doc, profile)
+        _ensure_header_footer(doc, profile)
 
         out_path = Path(output_path)
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
@@ -134,7 +135,7 @@ def _fill_cover_fields(doc, profile: dict, field_values: dict):
             if not value:
                 continue
 
-            if text.startswith(label) or _fuzzy_match_label(text, label):
+            if _fuzzy_match_label(text, label):
                 _replace_cover_field_run_level(para, label, value, field)
                 break
 
@@ -596,3 +597,21 @@ def _create_table_element(table_data: dict, font_name: str, font_size_pt: float,
 
     tbl_xml += '</w:tbl>'
     return parse_xml(tbl_xml)
+
+
+def _ensure_header_footer(doc, profile: dict):
+    hf = profile.get("header_footer", {})
+    if not hf:
+        return
+
+    if not doc.sections:
+        return
+
+    for section_info in hf.get("header", []) + hf.get("footer", []):
+        idx = section_info.get("section_index", 0)
+        if idx >= len(doc.sections):
+            continue
+        section = doc.sections[idx]
+
+        if section_info.get("different_first_page"):
+            section.different_first_page_header_footer = True
