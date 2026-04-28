@@ -99,7 +99,8 @@ def generate_all_ts_interfaces() -> str:
         PageSetup, CoverText, CoverField, CoverPage,
         TableField, TableInfo, HeaderStyle, BodyTextStyle, ContentStyle, SectionRequirement, SectionInfo,
         FormatRules,
-        FieldEntry, TemplateProfile
+        FieldEntry,
+        TemplateProfile
     ]
 
     interfaces = []

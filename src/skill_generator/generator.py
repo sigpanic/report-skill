@@ -85,7 +85,7 @@ Profile JSON已就绪，本Skill指导你完成报告生成。
 - 如果有任何不确定的信息，直接询问用户，不要自己编造
 - 模板中的注释和说明必须遵守
 - 输出文件后缀由工具自动保证（.doc模板→.doc输出，.docx→.docx）
-- **🚫 你必须遵守上方「关键约束」区域的所有约束，违反任何约束都是不可接受的**
+- **🚫 你必须遵守上方「关键约束」区域的所有约束（如有），违反任何约束都是不可接受的**
 
 凭据后半部分：**{key_suffix}**。请与前半部分拼接后传入skill_key参数。
 """
@@ -97,6 +97,9 @@ def generate_skill(
     output_path: str,
     constraints: Optional[dict] = None
 ) -> str:
+    from src.protocol.profile_schema import fix_profile_pydantic
+    profile = fix_profile_pydantic(profile)
+
     template_name = _infer_template_name(profile)
     template_filename = os.path.basename(profile.get('template_path', ''))
     page_size = _page_size_desc(profile)
@@ -155,9 +158,9 @@ def _generate_delete_rules(profile: dict) -> str:
 
     if annotation_patterns or removal_patterns:
         for p in annotation_patterns:
-            lines.append(f"- 包含「{p}」的段落将被自动删除")
+            lines.append(f"- 包含「{p}」的段落将被自动删除（子串匹配）")
         for p in removal_patterns:
-            lines.append(f"- 匹配「{p}」的段落将被自动删除")
+            lines.append(f"- 匹配「{p}」的段落将被自动删除（正则匹配）")
     else:
         lines.append("- ⚠️ 未检测到自动删除规则！如果模板中有注释/提示文本（红色/斜体），请手动补充annotation_patterns")
     lines.append("")
@@ -206,27 +209,53 @@ def _generate_fields_description(profile: dict) -> str:
 def _generate_critical_constraints(profile: dict, constraints: Optional[dict] = None) -> str:
     all_constraints = []
 
+    section_req_descs = set()
+    for sec in profile.get("sections", []):
+        for req in sec.get("requirements", []):
+            desc = req.get("description", "").strip()
+            if desc:
+                section_req_descs.add(desc)
+
     if constraints:
         for category, rules in constraints.items():
             if isinstance(rules, dict):
                 for key, value in rules.items():
-                    all_constraints.append(f"🚫 **[{category}]** {key}: {value}")
+                    text = f"{key}: {value}"
+                    if not _is_constraint_duplicate(text, section_req_descs):
+                        all_constraints.append(f"🚫 **[{category}]** {text}")
             elif isinstance(rules, str):
-                all_constraints.append(f"🚫 **[{category}]** {rules}")
+                if not _is_constraint_duplicate(rules, section_req_descs):
+                    all_constraints.append(f"🚫 **[{category}]** {rules}")
             elif isinstance(rules, list):
                 for item in rules:
-                    all_constraints.append(f"🚫 **[{category}]** {item}")
+                    item_str = str(item)
+                    if not _is_constraint_duplicate(item_str, section_req_descs):
+                        all_constraints.append(f"🚫 **[{category}]** {item_str}")
 
     if not all_constraints:
         return ""
 
     lines = ["## 🚫 关键约束（必须遵守，违反任何约束都是不可接受的）", ""]
+    lines.append("⚠️ 以下为全局约束，适用于整篇报告。各章节的特定约束见下方「章节结构」区域，此处不重复列出。")
+    lines.append("")
     for c in all_constraints:
         lines.append(c)
     lines.append("")
     lines.append("**以上约束来自模板原文，生成报告时必须严格遵守。不要以任何理由违反这些约束。**")
     lines.append("")
     return "\n".join(lines)
+
+
+def _is_constraint_duplicate(text: str, section_req_descs: set) -> bool:
+    text_clean = text.strip()
+    if text_clean in section_req_descs:
+        return True
+    for desc in section_req_descs:
+        if len(desc) > 10 and desc in text_clean:
+            return True
+        if len(text_clean) > 10 and text_clean in desc:
+            return True
+    return False
 
 
 def _generate_sections_description(profile: dict) -> str:
@@ -285,7 +314,7 @@ def _generate_format_description(profile: dict) -> str:
     lines = []
 
     body = rules.get("body_text", {})
-    header = rules.get("section_header", {})
+    header = rules.get("section_header") or {}
 
     body_parts = []
     if body.get("font_name"):

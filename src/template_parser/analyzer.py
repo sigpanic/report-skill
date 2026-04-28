@@ -143,7 +143,7 @@ def analyze_template_compact(template_path: str) -> dict:
     return compact
 
 
-_SECTION_PATTERN = re.compile(r'^[一二三四五六七八九十]+、')
+_SECTION_PATTERN = re.compile(r'^[一二三四五六七八九十]+、|^(?:Chapter|Section)\s+\d|^(\d+[\.\)])\s')
 _COVER_FIELD_PATTERN = re.compile(r'[：:]')
 
 
@@ -290,8 +290,8 @@ def check_profile_completeness(profile: dict, compact: dict) -> list:
     format_rules = profile.get("format_rules", {})
     if not format_rules.get("body_text", {}).get("font_name"):
         warnings.append("⚠️ format_rules.body_text.font_name未设置")
-    if not format_rules.get("section_header", {}).get("font_name"):
-        warnings.append("⚠️ format_rules.section_header.font_name未设置")
+    if not format_rules.get("section_header") or not format_rules.get("section_header", {}).get("font_name"):
+        warnings.append("⚠️ format_rules.section_header.font_name未设置（描述性字段，不影响文档生成）")
 
     for section in sections:
         requirements = section.get("requirements", [])
@@ -335,7 +335,7 @@ def get_analysis_guide() -> str:
   - `cover_spacer` — 封面空白段落
   - `cover_title` — 封面标题（如"实  验  报  告"）
   - `cover_field` — 封面字段行（如"学生姓名："）
-  - `cover_college` — 学院名称
+  - `cover_college` — 学院/学校名称行（应作为cover_page.fields中的一个字段）
   - `section_title` — 章节标题（如"一、实验目的"）
   - `section_note` — 斜体/红色注释说明段落（会被自动删除）
   - `format_note` — 格式要求说明段落（会被自动删除）
@@ -359,9 +359,10 @@ def get_analysis_guide() -> str:
    - **格式要求** (type="format"): 如"此部分首行缩进2字符"、"行间距固定值20磅" → description="此部分首行缩进2字符"
    - **内容要求** (type="content"): 如"需要包含算法流程图"、"需附运行结果截图" → description="需要包含算法流程图"
    - **禁止内容** (type="forbidden"): 如"不需要列程序源代码"、"不要附源代码"、"禁止使用图片" → description="不需要列程序源代码"
+     ⚠️ 仅用于章节级禁止。全局禁止（适用于整篇报告）应通过constraints参数传入，不放在requirements中
    - **其他约束** (type="other"): 不属于以上类别的约束
    ⚠️ **所有约束必须提取到requirements数组中。SectionInfo没有note字段——所有约束信息必须以结构化方式放入requirements。**
-7. **识别per-section内容样式**: 如果模板中某个章节有特殊的格式要求（如代码用等宽字体、摘要用楷体），在content_style中指定。content_style为空时使用全局body_text样式
+7. **识别per-section内容样式**: 如果模板中某个章节有特殊的格式要求（如代码用等宽字体、摘要用楷体），在content_style中指定。content_style为空时使用全局body_text样式。content_style中的字段会覆盖body_text中的对应字段（继承+覆盖语义）
 8. **识别隐式需求**: 约束不一定以独立段落出现，还可能隐藏在以下位置：
    - **章节标题中的括号内容**: 如"实验目的（不少于4个）" → 提取为min_count, value="4"
    - **章节标题中的数量词**: 如"三种算法比较" → 提取为min_count, value="3"
@@ -373,6 +374,7 @@ def get_analysis_guide() -> str:
    ```json
    {{"禁止内容": {{"源代码": "报告中不需要列程序源代码", "附件": "不需要附源代码电子版"}}, "格式要求": "所有图表必须编号"}}
    ```
+   ⚠️ **constraints仅用于全局约束。章节级约束（如"实验目的不能少于4个"）必须放在对应章节的requirements中，不要放入constraints，否则会导致约束在Skill中重复出现**
 
 ## ⚠️ 必须严格按照以下TypeScript接口定义输出JSON
 以下接口定义由Pydantic模型自动生成，是数据结构的唯一标准：
@@ -388,7 +390,7 @@ def get_analysis_guide() -> str:
 - 表格中红色(font_color=FF0000)或斜体(italic)的文本是提示，is_hint必须设为true
 - 表格中标签列(如"实验名称")不是字段，只有值列才是字段
 - ⚠️ annotation_patterns和removal_patterns不能为空！必须识别模板中的注释/提示文本模式
-- fields数组留空即可，系统会自动从cover_page和tables中汇总
+- fields不需要填写，系统会自动从cover_page.fields和tables[].fields中汇总
 - 如有不确定信息，询问用户"""
 
 

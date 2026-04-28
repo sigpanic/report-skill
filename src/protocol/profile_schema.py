@@ -15,7 +15,6 @@ class PageSetup(BaseModel):
 
 class CoverText(BaseModel):
     text: str
-    style: dict = Field(default_factory=dict)
 
     model_config = {"extra": "forbid"}
 
@@ -25,7 +24,6 @@ class CoverField(BaseModel):
     label: str
     type: Literal["text_with_underline", "text"]
     default: str = ""
-    style: dict = Field(default_factory=dict)
 
     model_config = {"extra": "forbid"}
 
@@ -33,7 +31,6 @@ class CoverField(BaseModel):
 class CoverPage(BaseModel):
     title: Optional[CoverText] = None
     fields: list[CoverField] = Field(default_factory=list)
-    college: Optional[CoverText] = None
 
     model_config = {"extra": "forbid"}
 
@@ -79,7 +76,7 @@ class ContentStyle(BaseModel):
     font_size_pt: float = 0
     italic: bool = False
     underline: bool = False
-    alignment: Literal["LEFT", "CENTER", "RIGHT", "JUSTIFY", ""] = ""
+    alignment: Literal["LEFT", "CENTER", "RIGHT", "JUSTIFY", "DISTRIBUTE", ""] = ""
 
     model_config = {"extra": "forbid"}
 
@@ -103,7 +100,7 @@ class SectionInfo(BaseModel):
 
 class FormatRules(BaseModel):
     body_text: BodyTextStyle
-    section_header: HeaderStyle
+    section_header: Optional[HeaderStyle] = None
     line_spacing_pt: float
     first_line_indent_chars: int
     space_before: float
@@ -118,7 +115,7 @@ class FieldEntry(BaseModel):
     key: str
     source: str
     label: str = ""
-    type: str = ""
+    type: Literal["text_with_underline", "text", "table_cell"] = "text"
     default: str = ""
     style: dict = Field(default_factory=dict)
     cell: Optional[str] = None
@@ -136,7 +133,6 @@ class TemplateProfile(BaseModel):
     format_rules: FormatRules
     annotation_patterns: list[str] = Field(default_factory=list)
     removal_patterns: list[str] = Field(default_factory=list)
-    fields: list[FieldEntry] = Field(default_factory=list)
 
     model_config = {"extra": "forbid"}
 
@@ -188,25 +184,24 @@ def fix_profile_pydantic(data: dict) -> dict:
 
     _clean_section_content_styles(profile)
 
-    if not profile.get("fields"):
-        all_fields = []
-        seen_keys = set()
-        cover_page = profile.get("cover_page", {})
-        if isinstance(cover_page, dict):
-            for f in cover_page.get("fields", []):
-                if isinstance(f, dict) and f.get("key") and f["key"] not in seen_keys:
-                    all_fields.append({"source": "cover_page", **f})
-                    seen_keys.add(f["key"])
-        tables = profile.get("tables", [])
-        if isinstance(tables, list):
-            for idx, t in enumerate(tables):
-                if isinstance(t, dict):
-                    for f in t.get("fields", []):
-                        if isinstance(f, dict) and f.get("key"):
-                            unique = f"{f['key']}_t{idx}_{f.get('cell', '')}"
-                            if unique not in seen_keys:
-                                all_fields.append({"source": f"table_{idx}", **f})
-                                seen_keys.add(unique)
-        profile["fields"] = all_fields
+    all_fields = []
+    seen_keys = set()
+    cover_page = profile.get("cover_page", {})
+    if isinstance(cover_page, dict):
+        for f in cover_page.get("fields", []):
+            if isinstance(f, dict) and f.get("key") and f["key"] not in seen_keys:
+                all_fields.append({"source": "cover_page", **f})
+                seen_keys.add(f["key"])
+    tables = profile.get("tables", [])
+    if isinstance(tables, list):
+        for idx, t in enumerate(tables):
+            if isinstance(t, dict):
+                for f in t.get("fields", []):
+                    if isinstance(f, dict) and f.get("key"):
+                        unique = f"{f['key']}_t{idx}_{f.get('cell', '')}"
+                        if unique not in seen_keys:
+                            all_fields.append({"source": f"table_{idx}", **f})
+                            seen_keys.add(unique)
+    profile["fields"] = all_fields
 
     return profile

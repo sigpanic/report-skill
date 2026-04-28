@@ -471,12 +471,15 @@ def _insert_section_content(title_para, content: str, images: list, content_tabl
                     pf.alignment = WD_ALIGN_PARAGRAPH.LEFT
                 elif alignment == "JUSTIFY":
                     pf.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                elif alignment == "DISTRIBUTE":
+                    pf.alignment = WD_ALIGN_PARAGRAPH.DISTRIBUTE
 
     if content_tables:
         for table_data in content_tables:
+            col_widths = table_data.get("column_widths_cm") or table_data.get("col_widths")
             tbl_element = _create_table_element(table_data, font_name, font_size_pt,
                                                   format_rules.get("table_header_bg_color", ""),
-                                                  column_widths_cm=None)
+                                                  column_widths_cm=col_widths)
             insert_after.addnext(tbl_element)
             insert_after = tbl_element
 

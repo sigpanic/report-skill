@@ -3,10 +3,13 @@ import re
 import tempfile
 import atexit
 import shutil
+import logging
 from collections import Counter
 from statistics import median
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
@@ -59,7 +62,7 @@ def doc_to_docx(doc_path: str) -> Optional[str]:
                 pass
         return docx_path
     except Exception as e:
-        print(f"doc转docx失败: {e}")
+        logger.warning(f"doc转docx失败: {e}")
         return None
 
 
