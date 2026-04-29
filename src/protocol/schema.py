@@ -10,7 +10,7 @@ ANALYZE_TEMPLATE_SCHEMA = {
             },
             "output_path": {
                 "type": "string",
-                "description": "compact原始数据JSON保存路径（可选，不提供则不保存）"
+                "description": "compact原始数据JSON保存路径（可选，不提供则自动保存到模板目录/parsed/下）"
             },
             "skill_key": {
                 "type": "string",
@@ -73,6 +73,11 @@ GENERATE_REPORT_SCHEMA = {
                                         "type": "array",
                                         "items": {"type": "string"},
                                         "description": "表头行"
+                                    },
+                                    "column_widths_cm": {
+                                        "type": "array",
+                                        "items": {"type": "number"},
+                                        "description": "各列宽度(厘米)，可选"
                                     },
                                     "rows": {
                                         "type": "array",

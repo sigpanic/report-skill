@@ -15,6 +15,29 @@ def _is_hint_format(fmt: dict) -> bool:
     return False
 
 
+def _describe_format_id(fmt: dict, seq: int) -> str:
+    parts = []
+    fn = fmt.get("font_name", "")
+    if fn:
+        label = fn[:6]
+        parts.append(label)
+    fs = fmt.get("font_size_pt", 0)
+    if fs:
+        parts.append(f"{int(fs)}pt")
+    if fmt.get("bold"):
+        parts.append("b")
+    if fmt.get("italic"):
+        parts.append("i")
+    if fmt.get("underline"):
+        parts.append("u")
+    color = fmt.get("font_color", "")
+    if color and color.upper() in ("FF0000", "FF0000FF"):
+        parts.append("red")
+    if not parts:
+        return f"f{seq}"
+    return "_".join(parts) + f"_{seq}"
+
+
 def analyze_template_compact(template_path: str) -> dict:
     raw = parse_template(template_path)
 
@@ -29,7 +52,7 @@ def analyze_template_compact(template_path: str) -> dict:
         if key in fmt_key_to_id:
             return fmt_key_to_id[key]
         fmt_counter[0] += 1
-        fid = f"f{fmt_counter[0]}"
+        fid = _describe_format_id(fmt_dict, fmt_counter[0])
         fmt_catalog[fid] = fmt_dict
         fmt_key_to_id[key] = fid
         return fid
@@ -162,6 +185,7 @@ def analyze_template_compact(template_path: str) -> dict:
 
     _add_content_types(compact)
     _add_structure_summary(compact)
+    compact["_text_overview"] = _generate_text_overview(compact)
 
     return compact
 
@@ -318,6 +342,73 @@ def _find_next_non_blank(compact: dict, start_idx: int) -> dict:
         if item.get("type") == "p" and item.get("text", "").strip():
             return item
     return {}
+
+
+def _generate_text_overview(compact: dict) -> str:
+    fmt = compact.get("formats", {})
+    content = compact.get("content", [])
+    lines = []
+    section_counter = [0]
+
+    for item in content:
+        ct = item.get("content_type", "")
+        text = item.get("text", "")
+
+        if ct == "cover_spacer":
+            lines.append("")
+
+        elif ct == "cover_title":
+            lines.append(f"[COVER TITLE] {text}")
+
+        elif ct == "cover_field":
+            tag = "[COVER FIELD]"
+            runs = item.get("runs", [])
+            has_ul = any(
+                fmt.get(r.get("f", ""), {}).get("underline")
+                for r in runs if isinstance(r, dict)
+            )
+            if has_ul:
+                tag = "[COVER FIELD (underline)]"
+            lines.append(f"  {tag} {text}")
+
+        elif ct == "cover_college":
+            lines.append(f"  [COVER FIELD] {text}")
+
+        elif ct == "section_title":
+            section_counter[0] += 1
+            lines.append("")
+            lines.append(f"[SECTION {section_counter[0]}] {text}")
+
+        elif ct == "section_note":
+            lines.append(f"  [HINT] {text}")
+
+        elif ct == "format_note":
+            lines.append(f"  [FORMAT] {text}")
+
+        elif ct == "section_body":
+            short = text[:120] + "..." if len(text) > 120 else text
+            lines.append(f"  [BODY] {short}")
+
+        elif ct == "table":
+            rows = item.get("rows", 0)
+            cols = item.get("cols", 0)
+            lines.append(f"  [TABLE: {rows}x{cols}]")
+            cells = item.get("cells", [])
+            if cells:
+                grid = {}
+                for cell in cells:
+                    grid[(cell["r"], cell["c"])] = cell.get("text", "")
+                for r in range(min(rows, 8)):
+                    row_cells = []
+                    for c in range(cols):
+                        val = grid.get((r, c), "")
+                        short_val = val[:20]
+                        row_cells.append(short_val)
+                    lines.append(f"    | {' | '.join(row_cells)} |")
+                if rows > 8:
+                    lines.append(f"    ... ({rows - 8} more rows)")
+
+    return "\n".join(lines)
 
 
 def check_profile_completeness(profile: dict, compact: dict) -> list:

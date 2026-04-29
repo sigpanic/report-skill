@@ -372,12 +372,6 @@ def _generate_workflow(profile: dict, skill_name: str) -> str:
         for f in _deduplicate_fields(fields)
     )
 
-    has_course_step = any(
-        any("课件" in r.get("description", "") or "course" in r.get("description", "").lower()
-            for r in s.get("requirements", []))
-        for s in sections
-    )
-
     workflow = """### 步骤1：创建输出目录
 - 在类别目录下创建本次报告的子目录
 - 生成的报告和相关文件输出到该子目录

@@ -119,10 +119,6 @@ def _fill_cover_fields(doc, profile: dict, field_values: dict):
     cover = profile.get("cover_page", {})
 
     all_paras = list(doc.paragraphs)
-    for table in doc.tables:
-        for row in table.rows:
-            for cell in row.cells:
-                all_paras.extend(cell.paragraphs)
 
     for para in all_paras:
         text = para.text.strip()

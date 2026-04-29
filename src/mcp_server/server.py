@@ -106,22 +106,35 @@ def _iter_skill_files():
 def _build_skill_content_cache():
     global _skill_file_cache, _skill_file_cache_mtime
     cache = {}
+    newest_mtime = 0
     for skill_file in _iter_skill_files():
         try:
             mtime = os.path.getmtime(skill_file)
             with open(skill_file, 'r', encoding='utf-8') as sf:
                 cache[skill_file] = {"content": sf.read().upper(), "mtime": mtime}
+            if mtime > newest_mtime:
+                newest_mtime = mtime
         except Exception:
             pass
     _skill_file_cache = cache
-    _skill_file_cache_mtime = 0
+    _skill_file_cache_mtime = newest_mtime
     return cache
 
 
 def _get_skill_cache():
-    global _skill_file_cache
+    global _skill_file_cache, _skill_file_cache_mtime
     if _skill_file_cache is None:
         _skill_file_cache = _build_skill_content_cache()
+    else:
+        for skill_file in _iter_skill_files():
+            try:
+                mtime = os.path.getmtime(skill_file)
+                entry = _skill_file_cache.get(skill_file)
+                if entry is None or mtime > entry["mtime"]:
+                    _skill_file_cache = _build_skill_content_cache()
+                    break
+            except Exception:
+                pass
     return _skill_file_cache
 
 
@@ -136,10 +149,10 @@ def _check_specialized_key(skill_key: str, category_dir: str = "") -> bool:
     if key_norm == _normalize_key(_G):
         return False
 
-    key_parts = key_norm.split("2026")
-    if len(key_parts) < 2:
+    key_parts = key_norm.rsplit("2026", 1)
+    if len(key_parts) != 2 or not key_parts[0].startswith("RPT"):
         return False
-    suffix = key_parts[-1]
+    suffix = key_parts[1]
 
     if category_dir and os.path.isdir(category_dir):
         for f_name in os.listdir(category_dir):
