@@ -22,7 +22,7 @@ def verify_format(template_path: str, generated_path: str, output_path: Optional
 
         results = {
             "page_setup": _verify_page_setup(template_doc, generated_doc),
-            "paragraphs": _verify_paragraphs(template_doc, generated_doc),
+            "paragraphs": _verify_paragraphs(template_doc, generated_doc, profile),
             "tables": _verify_tables(template_doc, generated_doc),
             "passed": True,
             "issues": [],
@@ -41,7 +41,7 @@ def verify_format(template_path: str, generated_path: str, output_path: Optional
                 for i, check in enumerate(checks):
                     if isinstance(check, dict):
                         for key, value in check.items():
-                            if value is False and key != "text_match":
+                            if value is False and key not in ("text_match", "match_type"):
                                 results["passed"] = False
                                 results["issues"].append(f"{category}[{i}].{key}: 不一致")
 
@@ -189,23 +189,171 @@ def _verify_page_setup(template_doc, generated_doc) -> dict:
         return {"has_sections": t_sec is not None and g_sec is not None}
 
     return {
-        "page_width": _compare_emu(t_sec.page_width, g_sec.page_width, "page_width"),
-        "page_height": _compare_emu(t_sec.page_height, g_sec.page_height, "page_height"),
-        "left_margin": _compare_emu(t_sec.left_margin, g_sec.left_margin, "left_margin"),
-        "right_margin": _compare_emu(t_sec.right_margin, g_sec.right_margin, "right_margin"),
-        "top_margin": _compare_emu(t_sec.top_margin, g_sec.top_margin, "top_margin"),
-        "bottom_margin": _compare_emu(t_sec.bottom_margin, g_sec.bottom_margin, "bottom_margin"),
+        "page_width": _compare_emu(t_sec.page_width, g_sec.page_width),
+        "page_height": _compare_emu(t_sec.page_height, g_sec.page_height),
+        "left_margin": _compare_emu(t_sec.left_margin, g_sec.left_margin),
+        "right_margin": _compare_emu(t_sec.right_margin, g_sec.right_margin),
+        "top_margin": _compare_emu(t_sec.top_margin, g_sec.top_margin),
+        "bottom_margin": _compare_emu(t_sec.bottom_margin, g_sec.bottom_margin),
     }
 
 
-def _compare_emu(a, b, name: str, tolerance: int = 10000) -> bool:
+def _compare_emu(a, b, tolerance: int = 10000) -> bool:
     if a is None or b is None:
         return a is None and b is None
     return abs(a - b) < tolerance
 
 
-def _verify_paragraphs(template_doc, generated_doc) -> list:
+def _verify_paragraphs(template_doc, generated_doc, profile: Optional[dict] = None) -> list:
     results = []
+
+    if profile:
+        _verify_landmarks(template_doc, generated_doc, profile, results)
+        _verify_body_format(generated_doc, profile, results)
+    else:
+        _verify_by_text_match(template_doc, generated_doc, results)
+
+    return results
+
+
+def _find_para_by_text(doc, text: str) -> Optional:
+    for para in doc.paragraphs:
+        if para.text.strip() == text.strip():
+            return para
+    return None
+
+
+def _compare_para_format(t_para, g_para, label: str) -> dict:
+    result = {
+        "label": label,
+        "text_match": t_para.text.strip() == g_para.text.strip(),
+    }
+    result["alignment_match"] = t_para.alignment == g_para.alignment
+
+    t_runs = t_para.runs
+    g_runs = g_para.runs
+    if t_runs and g_runs:
+        result["font_name_match"] = _compare_font_name(t_runs[0], g_runs[0])
+        result["font_size_match"] = _compare_font_size(t_runs[0], g_runs[0])
+        result["bold_match"] = t_runs[0].font.bold == g_runs[0].font.bold
+        result["italic_match"] = t_runs[0].font.italic == g_runs[0].font.italic
+        result["underline_match"] = t_runs[0].font.underline == g_runs[0].font.underline
+
+    return result
+
+
+def _get_profile_landmarks(profile: dict) -> dict:
+    titles = set()
+    for sec in profile.get("sections", []):
+        t = sec.get("title", "").strip()
+        if t:
+            titles.add(t)
+    labels = set()
+    for field in profile.get("cover_page", {}).get("fields", []):
+        lbl = field.get("label", "").strip()
+        if lbl:
+            labels.add(lbl)
+    return {"section_titles": titles, "cover_labels": labels}
+
+
+def _verify_landmarks(template_doc, generated_doc, profile: dict, results: list):
+    landmarks = _get_profile_landmarks(profile)
+
+    for title in landmarks["section_titles"]:
+        t_para = _find_para_by_text(template_doc, title)
+        g_para = _find_para_by_text(generated_doc, title)
+        if t_para and g_para:
+            r = _compare_para_format(t_para, g_para, f"section_title: {title[:30]}")
+            r["match_type"] = "landmark_section"
+            results.append(r)
+        elif g_para:
+            results.append({
+                "match_type": "landmark_section",
+                "label": f"section_title: {title[:30]}",
+                "text_match": True,
+                "note": "section title found in generated doc only (template match skipped)"
+            })
+        elif t_para:
+            results.append({
+                "match_type": "landmark_section",
+                "label": f"section_title: {title[:30]}",
+                "text_match": False,
+                "note": "section title found in template only — may have been removed"
+            })
+
+    for label in landmarks["cover_labels"]:
+        t_para = _find_para_by_text(template_doc, label)
+        g_para = _find_para_by_text(generated_doc, label)
+        if t_para and g_para:
+            r = _compare_para_format(t_para, g_para, f"cover_label: {label[:30]}")
+            r["match_type"] = "landmark_cover"
+            results.append(r)
+        elif g_para:
+            results.append({
+                "match_type": "landmark_cover",
+                "label": f"cover_label: {label[:30]}",
+                "text_match": True,
+                "note": "cover label found in generated doc only (template match skipped)"
+            })
+
+
+def _verify_body_format(generated_doc, profile: dict, results: list):
+    rules = profile.get("format_rules", {})
+    body = rules.get("body_text", {})
+    expected_font = body.get("font_name", "")
+    expected_size = body.get("font_size_pt", 0)
+
+    if not expected_font and not expected_size:
+        return
+
+    section_titles = set()
+    for sec in profile.get("sections", []):
+        t = sec.get("title", "").strip()
+        if t:
+            section_titles.add(t)
+
+    sampled = 0
+    for para in generated_doc.paragraphs:
+        text = para.text.strip()
+        if not text or text in section_titles:
+            continue
+        if not para.runs:
+            continue
+        if sampled >= 5:
+            break
+
+        run = para.runs[0]
+        mismatches = {}
+        if expected_font:
+            fn = run.font.name
+            if fn and fn != expected_font:
+                try:
+                    rPr = run._element.rPr
+                    if rPr is not None:
+                        ea = rPr.rFonts.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}eastAsia')
+                        if ea and ea != expected_font:
+                            mismatches["body_font_name"] = f"expected={expected_font}, got=(name={fn}, eastAsia={ea})"
+                except Exception:
+                    if fn != expected_font:
+                        mismatches["body_font_name"] = f"expected={expected_font}, got={fn}"
+            elif fn and fn == expected_font:
+                pass  # match
+
+        if expected_size and run.font.size:
+            actual_pt = run.font.size / 12700
+            if abs(actual_pt - expected_size) > 1.0:
+                mismatches["body_font_size"] = f"expected={expected_size}pt, got={actual_pt:.1f}pt"
+
+        if mismatches:
+            mismatches["match_type"] = "body_sample"
+            mismatches["label"] = f"body_sample: {text[:30]}"
+            mismatches["text_match"] = True
+            results.append(mismatches)
+
+        sampled += 1
+
+
+def _verify_by_text_match(template_doc, generated_doc, results: list):
     t_paras = template_doc.paragraphs
     g_paras = generated_doc.paragraphs
 
@@ -261,8 +409,6 @@ def _verify_paragraphs(template_doc, generated_doc) -> list:
             result["underline_match"] = t_runs[0].font.underline == g_runs[0].font.underline
 
         results.append(result)
-
-    return results
 
 
 def _compare_font_name(run_a, run_b) -> bool:

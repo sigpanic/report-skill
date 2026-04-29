@@ -239,7 +239,12 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             if _normalize_key(arguments.get("skill_key", "")) != _normalize_key(_G):
                 return [TextContent(type="text", text=KEY_ERROR_GENERAL)]
 
-            compact = analyze_template_compact(arguments["template_path"])
+            tp = arguments["template_path"]
+            if not os.path.exists(tp):
+                return [TextContent(type="text", text=f"❌ 模板文件不存在: {tp}")]
+            if not tp.lower().endswith(('.doc', '.docx')):
+                return [TextContent(type="text", text=f"❌ 不支持的文件格式，仅支持.doc/.docx: {tp}")]
+            compact = analyze_template_compact(tp)
 
             output_path = arguments.get("output_path")
             if not output_path:

@@ -151,13 +151,13 @@ class TemplateProfile(BaseModel):
     format_rules: FormatRules
     annotation_patterns: list[str] = Field(default_factory=list)
     removal_patterns: list[str] = Field(default_factory=list)
+    fields: list[FieldEntry] = Field(default_factory=list, description="Auto-populated from cover_page + tables, leave empty")
 
     model_config = {"extra": "forbid"}
 
 
 def validate_profile_pydantic(data: dict) -> dict:
     try:
-        data = {k: v for k, v in data.items() if k != "fields"}
         profile = TemplateProfile.model_validate(data)
         return {"valid": True, "errors": [], "profile": profile.model_dump()}
     except ValidationError as e:
@@ -167,8 +167,6 @@ def validate_profile_pydantic(data: dict) -> dict:
             msg = err.get("msg", "")
             errors.append(f"{loc}: {msg}")
         return {"valid": False, "errors": errors, "profile": None}
-    except Exception as e:
-        return {"valid": False, "errors": [str(e)], "profile": None}
 
 
 def _clean_section_content_styles(profile: dict):
