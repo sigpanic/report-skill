@@ -32,11 +32,17 @@ atexit.register(_cleanup_tmp_dirs)
 
 
 def doc_to_docx(doc_path: str) -> Optional[str]:
+    word = None
     try:
         import win32com.client
-        word = win32com.client.Dispatch("Word.Application")
+        from win32com.client import Dispatch
+        import pythoncom
+        import pywintypes
+        pythoncom.CoInitialize()
+        word = Dispatch("Word.Application")
         word.Visible = False
         word.DisplayAlerts = False
+        doc = None
         docx_path = None
         try:
             doc = word.Documents.Open(
@@ -51,19 +57,38 @@ def doc_to_docx(doc_path: str) -> Optional[str]:
                 docx_path = os.path.join(tmp_dir, "converted.docx")
                 doc.SaveAs2(os.path.abspath(docx_path), FileFormat=16)
             finally:
+                if doc:
+                    try:
+                        doc.Close(False)
+                    except Exception:
+                        pass
+                    doc = None
+        finally:
+            if word:
                 try:
-                    doc.Close(False)
+                    word.ScreenUpdating = True
                 except Exception:
                     pass
-        finally:
-            try:
-                word.Quit()
-            except Exception:
-                pass
+                word = None
         return docx_path
     except Exception as e:
         logger.warning(f"doc转docx失败: {e}")
         return None
+    finally:
+        import gc
+        gc.collect()
+        gc.collect()
+        try:
+            pythoncom.CoUninitialize()
+        except Exception:
+            pass
+        # Clean up Word lock files if any
+        try:
+            lock_file = os.path.join(os.path.dirname(doc_path), "~$" + os.path.basename(doc_path))
+            if os.path.exists(lock_file):
+                os.remove(lock_file)
+        except Exception:
+            pass
 
 
 def parse_template(template_path: str) -> dict:

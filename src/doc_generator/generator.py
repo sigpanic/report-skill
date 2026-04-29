@@ -88,8 +88,12 @@ def generate_report(
 
 
 def _docx_to_doc(docx_path: str, doc_output_path: str) -> Optional[str]:
+    doc = None
+    word = None
     try:
         import win32com.client
+        import pythoncom
+        pythoncom.CoInitialize()
         word = win32com.client.Dispatch("Word.Application")
         word.Visible = False
         word.DisplayAlerts = False
@@ -100,19 +104,31 @@ def _docx_to_doc(docx_path: str, doc_output_path: str) -> Optional[str]:
                 doc.SaveAs2(os.path.abspath(doc_output_path), FileFormat=0)
                 result = doc_output_path
             finally:
-                try:
-                    doc.Close(False)
-                except Exception:
-                    pass
+                if doc:
+                    try:
+                        doc.Close(False)
+                    except Exception:
+                        pass
+                    doc = None
         finally:
-            try:
-                word.Quit()
-            except Exception:
-                pass
+            if word:
+                word = None
         return result
     except Exception as e:
         logger.warning("docx转doc失败: %s", e)
         return None
+    finally:
+        try:
+            import gc
+            gc.collect()
+            gc.collect()
+        except Exception:
+            pass
+        try:
+            import pythoncom
+            pythoncom.CoUninitialize()
+        except Exception:
+            pass
 
 
 def _fill_cover_fields(doc, profile: dict, field_values: dict):

@@ -124,30 +124,27 @@ def _parse_ppt(file_path: str, enable_ocr: bool = True) -> dict:
         presentation.Saveas(pptx_path, 24)
         presentation.Close()
         presentation = None
-        powerpoint.Quit()
         powerpoint = None
 
         result = _parse_pptx(pptx_path, enable_ocr)
         result["format"] = "ppt (converted)"
         return result
     except Exception as e:
+        logger.warning("ppt转换失败: %s", e)
         if presentation:
             try:
                 presentation.Close()
-            except Exception:
-                pass
+            except Exception as close_err:
+                logger.warning("关闭ppt演示文稿失败: %s", close_err)
         if powerpoint:
-            try:
-                powerpoint.Quit()
-            except Exception:
-                pass
+            powerpoint = None
         try:
             result = _parse_pptx(file_path, enable_ocr)
             if result:
                 result["format"] = "ppt (partial)"
                 return result
-        except Exception:
-            pass
+        except Exception as fallback_err:
+            logger.warning("ppt降级解析失败: %s", fallback_err)
         return {"error": f"ppt解析失败: {str(e)}", "text": ""}
 
 

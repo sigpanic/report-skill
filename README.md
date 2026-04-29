@@ -176,18 +176,25 @@ output_base_dir: "."
 
 **支持哪些文件格式？**
 
-模板：.doc / .docx （.doc 需要 Windows 安装了 Word）  
-课件：.pptx / .ppt / .docx / .doc  
-输出格式自动与模板一致
+| 类型 | 格式 | 说明 |
+|------|------|------|
+| 模板 | `.docx` | 直接处理，无需额外依赖 |
+| 模板 | `.doc`（老格式） | 需要 Windows 安装 Microsoft Word，通过 COM 自动转换 |
+| 课件 | `.pptx` | 直接处理，无需额外依赖 |
+| 课件 | `.ppt`（老格式） | 需要 Windows 安装 Microsoft PowerPoint，通过 COM 自动转换 |
+| 课件 | `.docx` / `.doc` | 同模板规则 |
+| 输出 | 自动匹配输入格式 | `.docx` 模板 → `.docx` 输出，`.doc` 模板 → `.doc` 输出 |
+
+**WPS 用户：** WPS 虽然也能打开 `.doc`/`.ppt`，但它的 COM 接口与 Microsoft Office 不完全兼容，转换大概率会失败。建议用 `.docx`/`.pptx` 格式，不需要 COM 调用，不存在兼容问题。
 
 ---
 
 ## 已知限制
 
 - OCR 需要安装 Tesseract
-- `.doc` 转换需要 Windows COM（Word 应用）
+- `.doc` / `.ppt`（老格式）依赖 Microsoft Office COM 接口，需要安装 Office 且仅限 Windows
+- WPS 的 COM 兼容性不足，老格式建议先手动另存为 `.docx` / `.pptx`
 - 文本框、艺术字等复杂 Word 元素可能无法完美保持
-- 跨平台仅支持 Windows（COM 依赖）
 
 ---
 
