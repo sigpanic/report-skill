@@ -94,7 +94,7 @@ def _docx_to_doc(docx_path: str, doc_output_path: str) -> Optional[str]:
         import win32com.client
         import pythoncom
         pythoncom.CoInitialize()
-        word = win32com.client.Dispatch("Word.Application")
+        word = win32com.client.DispatchEx("Word.Application")
         word.Visible = False
         word.DisplayAlerts = False
         result = None

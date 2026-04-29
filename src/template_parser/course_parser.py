@@ -112,7 +112,9 @@ def _parse_ppt(file_path: str, enable_ocr: bool = True) -> dict:
     presentation = None
     try:
         import win32com.client
-        powerpoint = win32com.client.Dispatch("PowerPoint.Application")
+        import pythoncom
+        pythoncom.CoInitialize()
+        powerpoint = win32com.client.DispatchEx("PowerPoint.Application")
         powerpoint.Visible = False
         powerpoint.DisplayAlerts = False
 
@@ -146,6 +148,12 @@ def _parse_ppt(file_path: str, enable_ocr: bool = True) -> dict:
         except Exception as fallback_err:
             logger.warning("ppt降级解析失败: %s", fallback_err)
         return {"error": f"ppt解析失败: {str(e)}", "text": ""}
+    finally:
+        try:
+            import pythoncom
+            pythoncom.CoUninitialize()
+        except Exception:
+            pass
 
 
 def _parse_docx(file_path: str, enable_ocr: bool = True) -> dict:

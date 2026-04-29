@@ -35,11 +35,10 @@ def doc_to_docx(doc_path: str) -> Optional[str]:
     word = None
     try:
         import win32com.client
-        from win32com.client import Dispatch
         import pythoncom
         import pywintypes
         pythoncom.CoInitialize()
-        word = Dispatch("Word.Application")
+        word = win32com.client.DispatchEx("Word.Application")
         word.Visible = False
         word.DisplayAlerts = False
         doc = None
