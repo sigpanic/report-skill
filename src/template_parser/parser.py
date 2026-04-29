@@ -123,7 +123,7 @@ def _parse_header_footer(doc) -> dict:
         return {"sections": result}
 
     for section_idx, section in enumerate(doc.sections):
-        section_info = {"section_index": section_idx}
+        section_info: dict = {"section_index": section_idx}
 
         header_texts = []
         if section.header and not section.header.is_linked_to_previous:

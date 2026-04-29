@@ -546,7 +546,7 @@ def _remove_annotations(doc, profile: dict):
 
 
 def _create_table_element(table_data: dict, font_name: str, font_size_pt: float, header_bg_color: str = "",
-                          column_widths_cm: list = None):
+                          column_widths_cm: Optional[list] = None):
     headers = table_data.get("headers", [])
     rows = table_data.get("rows", [])
     num_cols = len(headers) if headers else (len(rows[0]) if rows else 0)

@@ -216,7 +216,7 @@ def _verify_paragraphs(template_doc, generated_doc, profile: Optional[dict] = No
     return results
 
 
-def _find_para_by_text(doc, text: str) -> Optional:
+def _find_para_by_text(doc, text: str):
     for para in doc.paragraphs:
         if para.text.strip() == text.strip():
             return para
