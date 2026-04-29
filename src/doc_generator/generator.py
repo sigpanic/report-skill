@@ -145,8 +145,8 @@ def _fill_cover_fields(doc, profile: dict, field_values: dict):
 def _fuzzy_match_label(text: str, label: str) -> bool:
     if not label:
         return False
-    text_clean = re.sub(r'\s+', '', text)
-    label_clean = re.sub(r'\s+', '', label)
+    text_clean = re.sub(r'\s+', '', text).replace('：', ':')
+    label_clean = re.sub(r'\s+', '', label).replace('：', ':')
     return text_clean.startswith(label_clean)
 
 
@@ -161,7 +161,7 @@ def _replace_cover_field_run_level(para, label: str, value: str, field: dict):
     for run in para.runs:
         if not found_label_end:
             label_runs.append(run)
-            if label.rstrip("：:") in run.text or run.text.rstrip().endswith("：") or run.text.rstrip().endswith(":"):
+            if label in run.text or run.text.rstrip().endswith(("：", ":")):
                 found_label_end = True
         else:
             value_runs.append(run)

@@ -190,7 +190,16 @@ def analyze_template_compact(template_path: str) -> dict:
     return compact
 
 
-_SECTION_PATTERN = re.compile(r'^[一二三四五六七八九十]+、|^(?:Chapter|Section)\s+\d|^(\d+[\.\)])\s')
+_SECTION_PATTERN = re.compile(
+    r'^[一二三四五六七八九十]+、'
+    r'|^(?:Chapter|Section|Part|Lesson|Unit|Topic|Module)\s+\d'
+    r'|^\d+[\.\)、]\s'
+    r'|^\d+\.\d+(?:\s|$)'
+    r'|^Appendix\s+[A-Z]'
+    r'|^(?:Introduction|Background|Purpose|Objectives?|Methods?|Results?|Discussion|Conclusions?|Summary|References?|Abstract)'
+    r'(?:[：:\.\s]|$)',
+    re.IGNORECASE
+)
 _COVER_FIELD_PATTERN = re.compile(r'[：:]')
 
 

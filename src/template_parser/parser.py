@@ -295,7 +295,12 @@ def _extract_format_rules(parsed: dict) -> dict:
         r'^Chapter\s+\d+',
         r'^Section\s+\d+',
         r'^Part\s+[IVXLCDM\d]+',
+        r'^Lesson\s+\d+',
+        r'^Unit\s+\d+',
+        r'^Topic\s+\d+',
+        r'^Module\s+\d+',
         r'^Appendix\s+[A-Z]',
+        r'^(?:Introduction|Background|Purpose|Objectives?|Methods?|Results?|Discussion|Conclusions?|Summary|References?|Abstract)(?:[：:\.\s]|$)',
     ]
 
     font_size_groups = {}
