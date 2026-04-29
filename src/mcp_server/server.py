@@ -29,6 +29,14 @@ from src.protocol.ts_generator import generate_all_ts_interfaces
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+
+def _safe_path(path_str: str) -> str:
+    abs_path = os.path.realpath(os.path.abspath(path_str))
+    if not abs_path.startswith(os.path.realpath(PROJECT_ROOT)):
+        raise ValueError(f"路径越权: {path_str} 不在项目目录 {PROJECT_ROOT} 内")
+    return abs_path
+
+
 _ENV_WHITELIST = {
     "STUDENT_ID": "student_id",
     "STUDENT_NAME": "student_name",
@@ -239,20 +247,21 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             if _normalize_key(arguments.get("skill_key", "")) != _normalize_key(_G):
                 return [TextContent(type="text", text=KEY_ERROR_GENERAL)]
 
-            tp = arguments["template_path"]
-            if not os.path.exists(tp):
-                return [TextContent(type="text", text=f"❌ 模板文件不存在: {tp}")]
+            tp = _safe_path(arguments["template_path"])
             if not tp.lower().endswith(('.doc', '.docx')):
                 return [TextContent(type="text", text=f"❌ 不支持的文件格式，仅支持.doc/.docx: {tp}")]
+            if not os.path.exists(tp):
+                return [TextContent(type="text", text=f"❌ 模板文件不存在: {tp}")]
             compact = analyze_template_compact(tp)
 
             output_path = arguments.get("output_path")
             if not output_path:
-                output_dir = _get_default_output_dir(arguments["template_path"])
-                base_name = os.path.splitext(os.path.basename(arguments["template_path"]))[0]
+                output_dir = _get_default_output_dir(tp)
+                base_name = os.path.splitext(os.path.basename(tp))[0]
                 output_path = os.path.join(output_dir, f"{base_name}_compact.json")
             else:
-                os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+                output_path = _safe_path(output_path)
+                os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
             save_compact(compact, output_path)
 
@@ -281,17 +290,22 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 {env_info}"""
 
             return [TextContent(type="text", text=result_text)]
+        except ValueError as e:
+            return [TextContent(type="text", text=f"❌ {str(e)}")]
         except Exception as e:
             return [TextContent(type="text", text=f"分析失败: {str(e)}")]
 
     elif name == "generate_report":
         try:
             skill_key = arguments.get("skill_key", "")
-            profile_path = arguments["profile_path"]
-            template_path_arg = arguments["template_path"]
+            template_path_arg = _safe_path(arguments["template_path"])
+            profile_path = _safe_path(arguments["profile_path"])
+            output_path_arg = _safe_path(arguments["output_path"])
 
             if not os.path.exists(template_path_arg):
                 return [TextContent(type="text", text=f"❌ 模板文件不存在: {template_path_arg}")]
+            if not template_path_arg.lower().endswith(('.doc', '.docx')):
+                return [TextContent(type="text", text=f"❌ 不支持的文件格式，仅支持.doc/.docx: {template_path_arg}")]
 
             if not os.path.exists(profile_path):
                 return [TextContent(type="text", text=f"❌ Profile文件不存在: {profile_path}\n请先完成模板分析（analyze_template）和Profile保存（save_profile）。")]
@@ -322,13 +336,15 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             # toagent: 此处必须保持中文，严禁改成英文
             output = generate_report(
                 template_path=template_path_arg,
-                output_path=arguments["output_path"],
+                output_path=output_path_arg,
                 profile=profile,
                 field_values=field_values,
                 sections=arguments["sections"],
                 result_images=arguments.get("result_images")
             )
             return [TextContent(type="text", text=f"报告已生成: {output}\n\n{env_info}")]
+        except ValueError as e:
+            return [TextContent(type="text", text=f"❌ {str(e)}")]
         except Exception as e:
             return [TextContent(type="text", text=f"生成失败: {str(e)}")]
 
@@ -337,7 +353,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             if _normalize_key(arguments.get("skill_key", "")) != _normalize_key(_G):
                 return [TextContent(type="text", text=KEY_ERROR_GENERAL)]
 
-            profile_path = arguments["profile_path"]
+            profile_path = _safe_path(arguments["profile_path"])
             with open(profile_path, 'r', encoding='utf-8') as f:
                 profile = json.load(f)
 
@@ -349,9 +365,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             profile = fix_profile_pydantic(profile)
 
             skill_name = arguments["skill_name"]
-            if not re.match(r'^[a-zA-Z0-9_\-\u4e00-\u9fff]+$', skill_name):
+            if not re.match(r'^[a-zA-Z0-9_\-一-鿿]+$', skill_name):
                 return [TextContent(type="text", text=f"❌ skill_name包含非法字符: {skill_name}。只允许字母、数字、下划线、连字符和中文。")]
-            output_path = arguments["output_path"]
+            output_path = _safe_path(arguments["output_path"])
 
             if os.path.isdir(output_path):
                 output_path = os.path.join(output_path, f"{skill_name}.md")
@@ -415,6 +431,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             result += "⚠️ 以上是特化Skill的完整内容。如果用户要求生成报告，请严格按照上述工作流程执行，不要跳过任何步骤。"
 
             return [TextContent(type="text", text=result)]
+        except ValueError as e:
+            return [TextContent(type="text", text=f"❌ {str(e)}")]
         except Exception as e:
             return [TextContent(type="text", text=f"生成失败: {str(e)}")]
 
@@ -424,17 +442,22 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             if not _check_specialized_key(skill_key):
                 return [TextContent(type="text", text=KEY_ERROR_SPECIALIZED)]
 
-            result = parse_course_material(arguments["file_path"])
+            file_path = _safe_path(arguments["file_path"])
+            if not os.path.exists(file_path):
+                return [TextContent(type="text", text=f"❌ 课件文件不存在: {file_path}")]
+
+            result = parse_course_material(file_path)
             if "error" in result and result.get("error"):
                 return [TextContent(type="text", text=f"解析失败: {result['error']}")]
 
             output_path = arguments.get("output_path")
             if not output_path:
-                course_dir = _get_course_output_dir(arguments["file_path"])
-                base_name = os.path.splitext(os.path.basename(arguments["file_path"]))[0]
+                course_dir = _get_course_output_dir(file_path)
+                base_name = os.path.splitext(os.path.basename(file_path))[0]
                 output_path = os.path.join(course_dir, f"{base_name}_parsed.json")
             else:
-                os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+                output_path = _safe_path(output_path)
+                os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
             with open(output_path, 'w', encoding='utf-8') as f:
                 json.dump(result, f, ensure_ascii=False, indent=2)
@@ -452,6 +475,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             summary += f"\n⚠️ **你必须读取文件获取完整内容**: {output_path}"
 
             return [TextContent(type="text", text=summary)]
+        except ValueError as e:
+            return [TextContent(type="text", text=f"❌ {str(e)}")]
         except Exception as e:
             return [TextContent(type="text", text=f"解析失败: {str(e)}")]
 
@@ -461,16 +486,25 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             if not _check_specialized_key(skill_key):
                 return [TextContent(type="text", text=KEY_ERROR_SPECIALIZED)]
 
+            template_path_arg = _safe_path(arguments["template_path"])
+            generated_path_arg = _safe_path(arguments["generated_path"])
+            if not os.path.exists(template_path_arg):
+                return [TextContent(type="text", text=f"❌ 模板文件不存在: {template_path_arg}")]
+            if not os.path.exists(generated_path_arg):
+                return [TextContent(type="text", text=f"❌ 生成文档不存在: {generated_path_arg}")]
+
             profile = None
             profile_path = arguments.get("profile_path")
-            if profile_path and os.path.exists(profile_path):
-                with open(profile_path, 'r', encoding='utf-8') as f:
-                    profile = json.load(f)
+            if profile_path:
+                profile_path = _safe_path(profile_path)
+                if os.path.exists(profile_path):
+                    with open(profile_path, 'r', encoding='utf-8') as f:
+                        profile = json.load(f)
 
             result = verify_format(
-                template_path=arguments["template_path"],
-                generated_path=arguments["generated_path"],
-                output_path=arguments.get("output_path"),
+                template_path=template_path_arg,
+                generated_path=generated_path_arg,
+                output_path=_safe_path(arguments["output_path"]) if arguments.get("output_path") else None,
                 profile=profile
             )
 
@@ -487,6 +521,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     msg += f"  {w}\n"
 
             return [TextContent(type="text", text=msg)]
+        except ValueError as e:
+            return [TextContent(type="text", text=f"❌ {str(e)}")]
         except Exception as e:
             return [TextContent(type="text", text=f"验证失败: {str(e)}")]
 
@@ -496,11 +532,16 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 return [TextContent(type="text", text=KEY_ERROR_GENERAL)]
 
             profile_data = arguments["profile_json"]
-            output_path = arguments["output_path"]
+            output_path = _safe_path(arguments["output_path"])
 
             template_path_val = profile_data.get("template_path", "")
-            if template_path_val and not os.path.exists(template_path_val):
-                return [TextContent(type="text", text=f"❌ 模板文件不存在: {template_path_val}\n请先调用analyze_template分析模板，然后根据分析结果编写Profile。")]
+            if template_path_val:
+                try:
+                    template_path_val = _safe_path(template_path_val)
+                    if not os.path.exists(template_path_val):
+                        return [TextContent(type="text", text=f"❌ 模板文件不存在: {template_path_val}\n请先调用analyze_template分析模板，然后根据分析结果编写Profile。")]
+                except ValueError as e:
+                    return [TextContent(type="text", text=f"❌ {str(e)}")]
 
             validation = validate_profile_pydantic(profile_data)
             if not validation["valid"]:
@@ -522,7 +563,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             if compact:
                 warnings = check_profile_completeness(profile, compact)
 
-            os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
             with open(output_path, 'w', encoding='utf-8') as f:
                 json.dump(profile, f, ensure_ascii=False, indent=2)
 
@@ -537,6 +578,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     result += f"  {w}\n"
 
             return [TextContent(type="text", text=result)]
+        except ValueError as e:
+            return [TextContent(type="text", text=f"❌ {str(e)}")]
         except Exception as e:
             return [TextContent(type="text", text=f"保存失败: {str(e)}")]
 
