@@ -40,7 +40,8 @@ def analyze_template_compact(template_path: str) -> dict:
     compact = {
         "page_setup": raw.get("page_setup", {}),
         "header_footer": raw.get("header_footer", {}),
-        "content": []
+        "content": [],
+        "_draft_format_rules": raw.get("format_rules", {})
     }
 
     for elem in raw.get("content", []):
@@ -330,10 +331,12 @@ compact数据中的`_summary`字段已自动提取模板的核心结构：
 - `tables_count`: 表格数量
 - `notes_count`: 注释/说明段落数量
 
-## 📋 格式要求检测（_format_notes字段）
-compact数据中的`_format_notes`字段已自动检测注释文字中包含的格式关键词。
-如果存在这些关键词，说明模板中包含了格式要求，你需要在Profile的`format_rules`和`sections[].content_style`中体现。
-**注意：自动检测仅供参考，不一定完整，你需要自己阅读注释原文确认所有格式要求。**
+## 📋 格式要求检测（_format_notes字段 + _draft_format_rules字段）
+- `_draft_format_rules`: 代码已自动从文档正文中提取了一份格式规则（统计最常用字体字号作为body_text，统计加粗大字号作为section_header）
+  **此为参考值，LLM需根据注释原文确认或修正。**
+- `_format_notes`: 注释文字中检测到的格式关键词列表，提醒你有哪些格式相关约束需要处理
+  **注意：自动检测仅供参考，不一定完整，你需要自己阅读注释原文确认所有格式要求。**
+- 格式决定原则：注释原文有明确说明的按注释走，没有说明的用_draft_format_rules的提取值
 
 ## 数据格式说明
 - `content`: 内容数组，每项type为"p"(段落)或"table"(表格)
