@@ -52,8 +52,8 @@ src/
 
 ### Data Flow
 
-1. **Template Analysis**: `parser.py` extracts raw doc structure → `analyzer.py` builds compact JSON (content dedup, format catalog, content_type labels) + TS interface guide
-2. **Profile Creation**: LLM writes `TemplateProfile` JSON from compact data + TS interface → `save_profile` validates via Pydantic (`extra="forbid"`) and checks completeness
+1. **Template Analysis**: `parser.py` extracts raw doc structure → `analyzer.py` builds compact JSON (text + content_type classification + draft format rules) + TS interface guide
+2. **Profile Creation**: LLM writes `TemplateProfile` JSON from compact data + TS interface → `save_profile` validates via Pydantic (`extra="forbid"`) and checks completeness. Format rules come from `_draft_format_rules` (code-extracted) overridden by natural language requirements from annotation text.
 3. **Skill Generation**: `generate_skill` fills template strings → produces Skill `.md` → auto-registers to all detected Agent framework dirs (`.trae/skills/`, `.claude/commands/`, `.cursor/rules/`, etc.)
 4. **Report Generation**: `generate_report` copies template → run-level replaces cover/text field runs → inserts section content (paragraphs + tables + images) → removes annotations/patterns → saves as `.doc` or `.docx`
 5. **Verification**: `verify_format` compares page setup, paragraph formatting (font/alignment), and table dimensions between template and output
@@ -65,6 +65,15 @@ src/
 - **Skill key auth**: Every tool requires a `skill_key` split across two locations in the Skill file. Forces agents to read the full Skill before calling tools.
 - **Run-level format preservation**: Generator copies the template `.docx`, then replaces run text in-place. Keeps original font/size/underline/color from the template.
 - **Automatic Skill registration**: `generate_skill` detects Agent framework directories and copies the Skill file to all of them.
+
+### Compact Data Format
+
+The compact JSON is simplified to only what the LLM needs:
+- `content[]`: paragraphs with `text` (string), `content_type` (classification), and optional `hint: true` for annotation text
+- `_draft_format_rules`: code-extracted format defaults (font, spacing) for LLM review
+- `_format_notes`: auto-detected format-related keywords found in annotation text
+- `_summary`: high-level structure overview
+- No run-level format details, no format catalog, no cross-referencing needed
 
 ### Important Patterns
 
