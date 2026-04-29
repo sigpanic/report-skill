@@ -108,6 +108,8 @@ def analyze_template_compact(template_path: str) -> dict:
     _add_structure_summary(compact)
     _detect_format_notes(compact)
 
+    compact["content"] = [x for x in compact["content"] if x.get("content_type") != "section_body" or x.get("text")]
+
     return compact
 
 
@@ -198,7 +200,12 @@ def _add_structure_summary(compact: dict):
         if ct == "cover_title":
             summary["cover_title"] = text
         elif ct == "cover_field":
-            label = text.split("：")[0].split(":")[0] if "：" in text or ":" in text else text
+            if "：" in text:
+                label = text[:text.index("：") + 1]
+            elif ":" in text:
+                label = text[:text.index(":") + 1]
+            else:
+                label = text
             summary["cover_fields"].append(label or text)
         elif ct == "cover_college":
             summary["cover_college"] = text
