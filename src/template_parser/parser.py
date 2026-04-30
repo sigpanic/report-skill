@@ -197,14 +197,18 @@ def _parse_header_footer(doc) -> dict:
 def _alignment_to_str(alignment) -> Optional[str]:
     if alignment is None:
         return None
-    mapping = {
-        WD_ALIGN_PARAGRAPH.LEFT: "LEFT",
-        WD_ALIGN_PARAGRAPH.CENTER: "CENTER",
-        WD_ALIGN_PARAGRAPH.RIGHT: "RIGHT",
-        WD_ALIGN_PARAGRAPH.JUSTIFY: "JUSTIFY",
-        WD_ALIGN_PARAGRAPH.DISTRIBUTE: "DISTRIBUTE",
-    }
-    return mapping.get(alignment, str(alignment).split("(")[0].split(".")[-1].strip() if alignment else None)
+    try:
+        mapping = {
+            WD_ALIGN_PARAGRAPH.LEFT: "LEFT",
+            WD_ALIGN_PARAGRAPH.CENTER: "CENTER",
+            WD_ALIGN_PARAGRAPH.RIGHT: "RIGHT",
+            WD_ALIGN_PARAGRAPH.JUSTIFY: "JUSTIFY",
+            WD_ALIGN_PARAGRAPH.DISTRIBUTE: "DISTRIBUTE",
+        }
+        return mapping.get(alignment, "LEFT")
+    except:
+        # 如果转换失败，返回默认值
+        return "LEFT"
 
 
 def _parse_paragraph(para) -> dict:
@@ -212,9 +216,14 @@ def _parse_paragraph(para) -> dict:
         "type": "paragraph",
         "text": para.text,
         "style": para.style.name if para.style else None,
-        "alignment": _alignment_to_str(para.alignment),
+        "alignment": "LEFT",
         "runs": []
     }
+    # 尝试获取 alignment，失败时保持默认
+    try:
+        result["alignment"] = _alignment_to_str(para.alignment)
+    except:
+        pass
 
     pf = para.paragraph_format
     if pf.first_line_indent:

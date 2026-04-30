@@ -558,7 +558,8 @@ def _remove_annotations(doc, profile: dict):
 
     for para in paras_to_remove:
         p_element = para._element
-        p_element.getparent().remove(p_element)
+        if p_element is not None and p_element.getparent() is not None:
+            p_element.getparent().remove(p_element)
 
 
 def _create_table_element(table_data: dict, font_name: str, font_size_pt: float, header_bg_color: str = "",
